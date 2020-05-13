@@ -1,15 +1,16 @@
 """Manager für Passwörter: Veränderbare Einstellungen unten."""
+
 import os
 import copy
 import base64
 import random
 import string
-import pandas as pd
 import time
 
 from numbers import Number
 from difflib import SequenceMatcher
 
+from pandas import DataFrame
 from getpass import getpass
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
@@ -64,7 +65,7 @@ toleranz_sequence = 0.1
 # eingibst, hast du zugriff aus geheime Passwörter. Diese Passwörter sind nicht wirklich geheim, viel mehr sind sie nur
 # nicht angezeigt. Falls diese Liste leer ist, wird der "geheim" Parameter ignoriert.
 
-geheime_passwörter = ["3403"]
+geheime_passwörter = ["1234"]
 
 # WENN DU EINEN DIESER WERTE VERÄNDERST FUNKTIONIERT DIE ENCRYPTED DATEI NICHT MEHR!
 # STELLE SICHER, DASS DU DEINE PASSWÖRTER GESICHERT HAST
@@ -1020,7 +1021,7 @@ def pass_aktualisieren(pass_dict, direct=None, pass_dict_geheim=None):
             user_change = user_input(err, max_amount=i+2, erlaubte_werte="c")
 
             if user_change == "c":
-                pd.DataFrame([pass_dict[real_key]["passwort"]]).to_clipboard(index=False, header=False)
+                DataFrame([pass_dict[real_key]["passwort"]]).to_clipboard(index=False, header=False)
                 err.error = True
 
         if user_change == i+1:
@@ -1133,7 +1134,7 @@ def pass_hinzufügen(pass_dict):
             to_update = user_input(err, max_amount=i+1, erlaubte_werte="c")
 
             if to_update == "c":
-                pd.DataFrame([neues_passwort[pass_name]["passwort"]]).to_clipboard(index=False, header=False)
+                DataFrame([neues_passwort[pass_name]["passwort"]]).to_clipboard(index=False, header=False)
                 continue
 
         if to_update == i + 1:
@@ -1460,7 +1461,7 @@ def main():
             pass_dict = pass_dict_geheim
 
         if aktion == "c":
-            pd.DataFrame([passw]).to_clipboard(index=False, header=False)
+            DataFrame([passw]).to_clipboard(index=False, header=False)
             err.error = True
 
         elif aktion == 1:
