@@ -1,33 +1,43 @@
 """Manager für Passwörter: Veränderbare Einstellungen unten."""
 
-import os
-import copy
 import base64
+import json
+import os
 import random
 import string
 import time
-
-from numbers import Number
+import sys
 from difflib import SequenceMatcher
-
-from pandas import DataFrame
 from getpass import getpass
+from numbers import Number
+
+from cryptography.fernet import Fernet
+from cryptography.fernet import InvalidToken
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from cryptography.fernet import Fernet
-from cryptography.fernet import InvalidToken
+from pynput import keyboard
+from multiprocessing import Process, Event
+from functools import partial
 
 # Ein "#" kommentiert eine Zeile aus.
 
 # Veränderbare Einstellungen:
 
-# Dies sind die Dateinamen. Diese kannst du nach belieben ändern
+
+# Dateinamen:
 
 clean_file = "Pass.clean"
 encrypted_file = "Pass.encrypted"
 demo_file = "Pass.demo"
+legacy_file = "pass.legacy"
 
+
+# Legacy Datei benutzen:
+use_legacy = True
+
+
+# Zufälliges Passwort:
 
 # Du kannst entweder alle Werte, die im zufälligen Passwort enthalten
 # sein sollen in eine Liste schreiben:
@@ -35,37 +45,49 @@ demo_file = "Pass.demo"
 # random_password = ["a", "b", "c", "1", "2", "3", "😀"]
 
 # oder als String von Charakteren:
-# random_password = "abc123😀"
-# random_password = """abc123😀"""
+# random_password = r"abc123😀"
+# random_password = r"""abc123😀"""
 
-# """
-# Wenn du sie in einen String schreibst ist es wichtig die """  """ zu setzen. Ansonsten werden bestimmte Charaktere
+# Wenn du sie in einen String schreibst ist es wichtig die r"""  """ zu setzen. Ansonsten werden bestimmte Charaktere
 # anders interpretiert.
 
+# Normales Passwort mit allen Sonderzeichen:
 random_password = string.printable[:94]
 
-# random_password = ["a", "b", "c"]
-
-if isinstance(random_password, (list, tuple)):
-    random_password = "".join(random_password)
-
-
 # Hier kann die standardmäßige Länge des zufälligen Passwortes angepasst werden.
-# Es kann auch über r 64 ein 64 langes Passwort gesetzt werden (Kann beliebig groß werden, auch 10**12)
-# Bei meinem PC dauert 1 000 000, also 10**6 8.6s
-
-random_length = 16
+random_length = 32
 
 
-# Hier kann die Minimale Toleranz zum approximieren des Passworts festgelegt werden
+# Geheimes Passwort:
+secret_password = "1234"
+
+
+# Werte, die für geheim als Wahr angenommen werden sollen:
+true_accept = ["j", "ja", "y", "yes", "ye", "t", "true"]
+
+
+# Alle verfügbaren Passwörter anzeigen:
+show = ["show", "show all"]
+
+
+# Minimale Toleranz:
 toleranz_sequence = 0.1
 
 
-# Hier kannst du geheime Passwörter festlegen. Sobald du einen Wert in "Passwort eingeben" oder in der Hauptfunktion
-# eingibst, hast du zugriff aus geheime Passwörter. Diese Passwörter sind nicht wirklich geheim, viel mehr sind sie nur
-# nicht angezeigt. Falls diese Liste leer ist, wird der "geheim" Parameter ignoriert.
+# Passworthinweis:
+passwort_hinweis = "Bitte benutze deine Arme!"
+# Falls keiner:
+# passwort_hinweis = None oder ""
 
-geheime_passwörter = ["1234"]
+# Nach wie vielen falschen Versuchen der Hinweis angezeigt werden soll
+passwort_hinweis_num = 2
+
+
+# Taste die gedrückt wird um Passwort eingeben zu lassen, zweite um den Modus zu verlassen
+# 100 000 Stellen eingeben bei mir: 28 sek
+enter_pw_key = keyboard.Key.delete
+esc_pw_key = keyboard.Key.esc
+
 
 # WENN DU EINEN DIESER WERTE VERÄNDERST FUNKTIONIERT DIE ENCRYPTED DATEI NICHT MEHR!
 # STELLE SICHER, DASS DU DEINE PASSWÖRTER GESICHERT HAST
@@ -78,19 +100,24 @@ os.urandom(128)
 """
 # Die 128 kannst du auch ändern, je nachdem wie sicher du es haben willst. Mehr als 1024 bringt es nicht.
 
-salt = b"""\xf3\x9fp\x0b\xf6\\[\xcc\xef\x8bXU\xea\x82\xa96zF\x01\x8eK\xfd\xfe\xf66k\xfaw\xd7)\xa6\xd8i\xf6\xff\x18|2\x9e\x9c\xc5\xcd\xa8\xb52\xac\xc2\xaa\x0c\x8b*{\x9d"\xe9\n\x08*4FV\x17\xae\xacJB\xec\xd1\xb8oc\xce4<\x16lh\xdd;q(\xc9o\xc4Q!\xbb+\x1a\\S\xa4V\xda\xce\xe0\x8b\xe9I\xbcK\x84\xf4j\xeb\xe6\x11\x0f\xbaW*\xb8\xc0<\x1f"9\xf66\xa4\x15\xd8<\xb3.>A*\xc3\x90\xf8\xe0\x1aW\x80\xe8\xb5\xf9$z\x1f\x9b0\x08\xd6\x01\x121\xf4;\xb0j\x06JG/\x85I,\xca\xc8\x83e\t\x94\x1a<~\x95\xd3\xe7O\x8aM\x00c\x91\x1c|\x03D\xc0k\xf9\tF\x9a(\xc5l\n\x93\xdc&]\xcb\xdc-0\xcf\xb4f\xbc\x82\x01v<nX\xf5`C$\xb4\xba\xb9\x92\x8bt.\xf5V\xa1\x1f\xab9\x01)\x89w.1\xe4\x8e\x89\x8d\xac1\xbf!\xcc\x14+X\xd9\xeaQ}\x8d\xf185Y$\x9d\xec\xfb;p\xa5\x9b\xb9,"\xf8\xf2\x1e>q0Qf\xc1\x19\x92\x80\xdb\xd4\xcc\xdc\x11\x03~\x95\x15\x81v\xa163h\xe0e\nE\xe6\x18\xb6R\x91\xe9\xa3\xc8\x08K\x945\x11\x96\x98\xba\x1f\x9d\xd7-\xbc^\xf3Y\x12\x074\x9a.\xff0iR\x96A3cZ~\xcf\r\xbc\xc9\x8f7I\xef\xdbRsA\xbf\x00S\xd6\x9a\xa1D\x15\xe2T\x86G\x80\xd1\x83\x83\x1a\xea\n\xec}=\xa1\xdf3L\r\x99\x9bV\xa7\xebS:y\x08\xf4)\xea\x1b\x9c\x1e\xea\xdb\x80\xf2*0\xa5V\x8b\x97\x8c\x18\xd8\xa2\x9e\xde\x9a\xdaDs\xf6y\xd7\xee\xaf\x01\xe46{n\xce=\xed\xdc\xe5\x87\xdcJk8\xc1\x80\xcf\xab\x99,\xdbT"\x13\xc2\xd3\x8e\xc2\xd5_\xf00\xb1\xb6\x15\xa2\x8e\x171\xbe\xb9\xfb\x17\xc8~\xcd\x1ci\x9c\xb3P/XgVp\xc9fo\xa8\xfe\x90\xcf\x8c\xe0B\xff\x9e\xee\x85 A\x98*+\x9f\x0eA*U\xab\xa2\xdc\xd6d57\xa1\xcba\xc8\xaf\xf4F\xd4\t\x96\xf3\xa6\xee\r^gO\x158\x9a\x0c\xd5\xbdHd\x1f\xb6\xf4\xf4\xe7\x91,e\xba\xad\xf0\xc9,\x8b\xddx\xac\xb1\x0f\xa5\x8bK\xc2 \n\x0b\xe7$1.B\xbft\xa7D\x8b\x9b\x05M\xc4\xe3\x87\x11\xb5\xdde0\xdf\x9c\x93is\xf7\xbaWc\xec2\xf3\xd1\'\x88`8\xd4\xd3\xa9-\x82}\xceLPYr+\x8a\x03\xf5\xda$3B\x91\x8e\xf9lpN\xc9>\xb5\x10\x07:+\xdaTIa*\xd7z\x949D\n\xee$|z \x86|\xaeS\'&\\h\x8c\xa5hc\x06$\xdf\x11\x8aj\xca\xba`\xc0\xe0\x87L1\x15\xf1\x94\x9b|\x9b\x9e\xd8\n\xf0\x03\x01zr\xb3\xb8\x8e\xe7!3\xde\xe1\xba\xde\xa9n&\xcbAz\xc5B\x99P+!\xd9v\xcb\xb1\xc3-\x97\xb6\xfc\xbb\xa8\x10\xf7h\xa6C&\x16;\xf2\xb3Py\xfd\x81\xb0\xc0\xb8\xb1\xfb\x1e\x85GG1\x80T\x0e\xa6GY"\xbbA]\xa1R\xee\x88\xa5{Q\x9dq\xda\xbc\\+\xc3\x9f\xd9(\x05\x97L\xff\x9e\x1a\xa8\x1b\xb0@f\xbaG0\xdb;\xad\x1e\xd8\xb4\xed>b\xb3<\xe8u\xb9\xc5\xba\x06\x17\xf54\x89\xff\xb2~\xaa,\xdc\x0er\xe8c\xe5\x93WE\xee\xb8\xc9\x11\xe20(\xb5\x04\x93/SF\x00\xda)\xc4P\xd2\xceRv\xb6\xb4~y\xe15\xd8\x05g\x1a-Y\xe6{\xba\xc1\xc7{\x18\xa6\xb7\xc0\xa5\xa9\x8d\xbc\x80L$1I\xe77\x85orJl\x90x\x828\n\xf3\x11:\xec\x00\x1b\xf2\xc8\xdf\xf0\x9f\xab\xbb\xa10\xe0\xae\xee\x17h\xb8.\x0b\xb8\x91\xbfJ^b\xeb\r\xe0B\x9d\xe1`t&\xf9kr\x9f\xd7\xa2~-U\xfeOt\xed\xab\xb6\x91\xad\xfe\t\xc8\xab\xd14\xa2\xe7\xd3\x12#@\xe4\xa6\xc3\xf1\x1f_O^\xee\x95"v\xd6\xd0\xc1\xb7\xff\x86@-\x90,\x14\x0eQ/0\xfc\x11m5\xb5\x01\x13\xef\xc3=\xbc\x89\xaa\xb4\\\x8c\x12\x9e\xa5\xba\x0fpfou\xab\xbc\x11\x9b:\xd9;GG\x9aF\xeb\xee\x15\xfcC\x14\xee\r\xf1\x94g\xfbN\\yYt\xad"""
+salt = b"""(N\x18\xdbkJ{\xc4\xfb\x1a\x9d\xf3\xff\xda\xe0N\x01\xc5;09\x1eH\xd3\x8e\xdd\x1c"m\x9c\x12\xa6\xc2R\xdd\xcf\x9b\xd2\xe6w7G\x84=\x81\xb3\xf3\x8d\xf1D\x12\x7f\xc9\xa6\xaa\xb8L\xf8\xd7\xeb}\xfb\xfe\x8b\xa0\x00X\x08\xb3H\xaa\x00\xc5\x91\xa9\x8aT\xecX\x80\xc9;\x94\xe9"\xae\xa8KK\xe1\x07\xdax[4\x03B\xd4G\xd0\xf3\x95\xc89\xfa\xac\x1c\x83\xe1\xee\x89\xc0tM\x01"Y\x00}\x12qY\x94>\xb6\x1f;\xc0\xdf\xb0\xd3\x83\x9fV\x9c\x93\x9d\xbd\x82\xf2\r\x94!s\x97\xc1\x1f4\xcd\xdc\xf1\x16\xb6\xc59\\\x1e:\x7ff\x9f\xe3\xf5\x8bX\xdbU\xfe{w\xa9\xfc\x03e\xbaK\x9a0j\x91\xf7@d.\xff\xe5\xef\xf7R\xe0`\xd9\x0cl\x84>p\xe8q\xa3X\x90\']8@\x16\x90V\xc3\xd2\xa7 CP\x93\x046\x11tk\x01\x1e\x1aC@\xf3bH"\xbe\x06:_A\xd8$\xb9\x89\xaeD\xd4\xb2\x83\xddS -8M\x1b\xeex\xca\x84\xf1"""
 
 
-# Dies ist die Anzahl der Interationen für den Algorithmus. Je niedriger der Wert desto schneller geht das
-# Ver- und Entschlüsseln. Je schneller es geht, desto mehr Angriffe kann ein potenzieller Angreifer pro Sekunde
-# Ausführen. Es bietet sich also an den Wert bei ~1s zu halten, sodass ein Angreifer sehr lange braucht
-# Und es für dich nicht allzu lange ist. (Skaliert linear)
+# Anzahl der Interationen für den Algorithmus:
 iterations = 10**6
 
 
-# Der Algorithmus der zum verschlüsseln und erstellen des Keys aus deinem Passwort, der wiederum zum
-# Verschlüsseln verwendet wird.
+# Algorithmus zum verschlüsseln:
 algorithm = hashes.SHA3_512()
+
+
+# NICHT VERÄNDERN!
+
+if isinstance(random_password, (list, tuple)):
+    random_password = "".join(random_password)
+
+length = 32
+backend = default_backend()
 
 
 # Vorbereitungsfunktionen --------------------------------------------------------------------------------------------------------
@@ -127,53 +154,50 @@ __ALL__ = ['colored', 'cprint']
 VERSION = (1, 1, 0)
 
 ATTRIBUTES = dict(
-        list(zip([
-            'bold',
-            'dark',
-            '',
-            'underline',
-            'blink',
-            '',
-            'reverse',
-            'concealed'
-            ],
-            list(range(1, 9))
-            ))
-        )
+    list(zip([
+        'bold',
+        'dark',
+        '',
+        'underline',
+        'blink',
+        '',
+        'reverse',
+        'concealed'
+    ],
+        list(range(1, 9))
+    ))
+)
 del ATTRIBUTES['']
 
-
 HIGHLIGHTS = dict(
-        list(zip([
-            'on_grey',
-            'on_red',
-            'on_green',
-            'on_yellow',
-            'on_blue',
-            'on_magenta',
-            'on_cyan',
-            'on_white'
-            ],
-            list(range(40, 48))
-            ))
-        )
-
+    list(zip([
+        'on_grey',
+        'on_red',
+        'on_green',
+        'on_yellow',
+        'on_blue',
+        'on_magenta',
+        'on_cyan',
+        'on_white'
+    ],
+        list(range(40, 48))
+    ))
+)
 
 COLORS = dict(
-        list(zip([
-            'grey',
-            'red',
-            'green',
-            'yellow',
-            'blue',
-            'magenta',
-            'cyan',
-            'white',
-            ],
-            list(range(30, 38))
-            ))
-        )
-
+    list(zip([
+        'grey',
+        'red',
+        'green',
+        'yellow',
+        'blue',
+        'magenta',
+        'cyan',
+        'white',
+    ],
+        list(range(30, 38))
+    ))
+)
 
 RESET = '\033[0m'
 
@@ -223,7 +247,7 @@ def cls():
     os.system('cls' if os.name == 'nt' else 'clear')
 
 
-class Input():
+class Input:
     """Class für Input."""
 
     def __init__(self):
@@ -510,7 +534,7 @@ def parser_maxlen(phlist, prec, mehrere, string=False, absval=False, klammer=Fal
                         if all(item >= 0 if isinstance(item, Number) else 1 for item in phlist):
                             b = f"{item:{forma}}"
                         else:
-                            b = f"{' '*(3-len(str(int(item))))}{item:{forma}} "
+                            b = f"{' ' * (3 - len(str(int(item))))}{item:{forma}} "
 
                 else:
                     b = f"{item:{forma}}"
@@ -602,7 +626,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
         if mehrere:
             if len(phlist) % 2 == 0:
                 while i < len(phlist):
-                    max_len = parser_maxlen(phlist[i:i+2], prec, mehrere, string, absval, klammer)
+                    max_len = parser_maxlen(phlist[i:i + 2], prec, mehrere, string, absval, klammer)
                     print(max_len)
                     if dotted_len is not False and isinstance(dotted_len, Number):
                         max_len += dotted_len
@@ -627,27 +651,27 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                         b = f"{phlist[i]:{forma}}"
                         x_1 = f" {anf_klam[n]}{temp_space}{b:{ar}{max_len}}{end_klam[n]} "
 
-                    if isinstance(phlist[i+1], str):
+                    if isinstance(phlist[i + 1], str):
                         if string:
-                            x_2 = f" {anf_klam[n]}{phlist[i+1]:{str_ar}{max_len}}{end_klam[n]} "
+                            x_2 = f" {anf_klam[n]}{phlist[i + 1]:{str_ar}{max_len}}{end_klam[n]} "
 
                         else:
-                            x_2 = f" {anf_klam[n]}{phlist[i+1].strip():{str_ar}{max_len}}{end_klam[n]} "
+                            x_2 = f" {anf_klam[n]}{phlist[i + 1].strip():{str_ar}{max_len}}{end_klam[n]} "
 
                     else:
                         forma = f".{prec}f"
-                        if round(phlist[i+1], 12) == 0:
-                            phlist[i] = abs(phlist[i+1])
+                        if round(phlist[i + 1], 12) == 0:
+                            phlist[i] = abs(phlist[i + 1])
 
-                        if phlist[i+1] < 0:
+                        if phlist[i + 1] < 0:
                             temp_space = ""
                         else:
                             temp_space = vorne_space
 
-                        b = f"{phlist[i+1]:{forma}}"
+                        b = f"{phlist[i + 1]:{forma}}"
                         x_2 = f" {anf_klam[n]}{temp_space}{b:{ar}{max_len}}{end_klam[n]} "
 
-                    forma = f"─<{max(len(x_1)-2, len(x_2)-2)}"
+                    forma = f"─<{max(len(x_1) - 2, len(x_2) - 2)}"
                     x_3 = f"╶{'':{forma}}╴"
 
                     if nur_pfeil:
@@ -661,7 +685,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                     i += 2
 
         else:
-            mitte = int(len(phlist)/2)
+            mitte = int(len(phlist) / 2)
 
             while i < len(phlist):
                 if i == mitte and check_3:
@@ -716,7 +740,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                     except IndexError:
                         ph.append(phlist[i])
                     try:
-                        ph[i+1] = pfeil
+                        ph[i + 1] = pfeil
                     except IndexError:
                         ph.append(pfeil)
                     i += 1
@@ -726,7 +750,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                     if i == 0:
                         ph.insert(0, pfeil)
                     else:
-                        ph[i-1] = pfeil
+                        ph[i - 1] = pfeil
 
             if dotted:
                 x = f"{anf_klam[n]}{phlist[i]:{str_ar}}{end_klam[n]}"
@@ -739,7 +763,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                 j = len(x)
 
                 while j < max_len:
-                    if j == max_len-1:
+                    if j == max_len - 1:
                         x += " "
                     elif j % 2 == 0:
                         x += " "
@@ -770,7 +794,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
                     if all(item >= 0 if isinstance(item, Number) else 1 for item in phlist):
                         b = f"{phlist[i]:{forma}}"
                     else:
-                        b = f"{' '*(3-len(str(int(phlist[i]))))}{phlist[i]:{forma}} "
+                        b = f"{' ' * (3 - len(str(int(phlist[i]))))}{phlist[i]:{forma}} "
 
                 else:
                     b = f"{phlist[i]:{forma}}"
@@ -795,463 +819,199 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
 
 # /Vorbereitungsfunktionen -------------------------------------------------------------------------------------------------------
 
+state = None
+true_accept = [item.lower() for item in true_accept]
+
+enc_main = False
 
 
-
-
-def pass_to_string(pass_dict):
-    """Dumped das Passwort in String form."""
-    strich = "-------------------------"
-    strich_under = "__________________________________________________"
-    final_string = (f"Passwörter:\n\nFormat:\n{strich}\nName (Für Email - Email)\nEmail\nPasswort\nUsername\nGeheim True / Ja - "
-                    f"Sonst False\n{strich}\n{strich_under}")
-    for key, value in pass_dict.items():
-        if key == "email":
-            for key_2, value_2 in pass_dict[key].items():
-                final_string += f"\n\n{strich}\nEmail\n{key_2}\n{value_2}\n{strich}"
-
-        else:
-            if isinstance(value, dict):
-                final_string += (f"\n\n{strich}\n{key}\n{value['email']}\n{value['passwort']}\n{value['username']}\n"
-                                 f"{value['geheim']}\n{strich}")
-
-            elif isinstance(value, list):
-                for item in value:
-                    final_string += (f"\n\n{strich}\n{key}\n{item['email']}\n{item['passwort']}\n{item['username']}\n"
-                                     f"{item['geheim']}\n{strich}")
-
-    return final_string
-
-
-def pass_to_dict(password, prov_pass):
-    """Gibt ein dict aus einem Password String wieder."""
-    password = password.split("__________________________________________________")[1]
-    password = password.replace("\r", "")
-    pass_dict = {"email": {}}
-    if geheime_passwörter:
-        geheim_check = prov_pass in geheime_passwörter
-    else:
-        geheim_check = True
-    if password[-2] + password[-1] != "\n":
-        password += "\n"
-
-    pw = password.split("\n-------------------------\n")[1::2]
-    iter_list = ["email", "passwort", "username", "geheim"]
-
-    for i, item in enumerate(pw):
-        item = item.split("\n")
-        # Email
-        if item[0].lower() == "email":
-            pass_dict["email"].update({item[1]: item[2]})
-
-        else:
-            dict_hilf = {}
-            if len(item[1:]) != len(iter_list):
-                cprint(f"Fehler in Passwort {item[0]} ({i}): Es sind nicht alle Zeilen gesetzt: {item[1:]}")
-                input()
-                raise Exception
-
-            for key, value in zip(iter_list, item[1:]):
-                if key == "geheim":
-                    dict_hilf.update({key: value.lower() in ["true", "ja"]})
+class Password:
+    def __init__(self, name="", email="", password="", username="", website="", geheim=False, typ=None):
+        if not isinstance(geheim, bool):
+            if isinstance(geheim, str):
+                if geheim.lower() in ["ja", "j", "true", "t"]:
+                    geheim = True
                 else:
-                    dict_hilf.update({key: value})
-
-            if dict_hilf["geheim"] and geheim_check is False:
-                continue
-
-            for values in pass_dict:
-                if item[0] in values:
-                    if isinstance(pass_dict[item[0]], dict):
-                        dict_hilf_old = []
-                        dict_hilf_old = pass_dict[item[0]]
-                        dict_hilf = [dict_hilf_old, dict_hilf]
-
-                    elif isinstance(pass_dict[item[0]], list):
-                        pass_dict[item[0]].append(dict_hilf)
-                        break
-
+                    geheim = False
             else:
-                dict_hilf = {item[0]: dict_hilf}
-                pass_dict.update(dict_hilf)
+                try:
+                    geheim = bool(geheim)
+                except Exception:
+                    raise Exception(colored(f"geheim konnte nicht zu einem bool konvertiert werden: \n{geheim}\n", "red"))
 
-    return pass_dict
+        if typ is None:
+            typ = []
+        if isinstance(typ, str):
+            typ = [typ]
 
+        self.typ = typ
+        self.name = str(name)
 
-def pass_auslesen(pass_dict):
-    """Liest das Passwort aus einem dictionary aus."""
-    err = Input()
+        self.email = str(email)
+        self.password = str(password)
+        self.username = str(username)
+        self.website = str(website)
+        self.geheim = geheim
+        self.rb_inited = False
 
-    while err.error:
-        print("Für was möchtest du das Passwort wissen?")
-        user_key = user_input(err, string=True, min_amount=False)
-
-    if user_key in pass_dict:
-        real_key = user_key
-
-    else:
-        keys = list(pass_dict.keys())
-        maximum = 0.0
-        real_key = ""
-
-    if real_key == "":
-        for item in keys:
-            ratio = SequenceMatcher(a=user_key, b=item).ratio()
-            if ratio > maximum and ratio > toleranz_sequence:
-                maximum = ratio
-                real_key = item
-
-        if maximum > toleranz_sequence:
-            print((f'Der Schlüssel wurde nicht gefunden. Er konnte aber durch "{real_key}" mit {maximum * 100:.2f}% '
-                   'approximiert werden.\n'))
-
+    def to_json(self, geheim=False):
+        if geheim and self.geheim:
+            return ""
         else:
-            print("Der Schlüssel konnte nicht approximiert werden.")
-            return
-
-    if real_key == "email":
-        print("Für welche E-Mail möchtest du das Passwort wissen?")
-        user_key = user_input(err, string=True, min_amount=False)
-
-        try:
-            user_key = int(user_key)
-            email = f"freezepro{user_key}@gmail.com"
-
-            if email not in pass_dict["email"]:
-                print("Der Eintrag wurde nicht gefunden.")
-
-            print(f"E-Mail:")
-            print(f"{email} . . {pass_dict['email'][email]}")
-            return
-
-        except ValueError:
-            if user_key in pass_dict["email"]:
-                real_key = user_key
-                email = user_key
-
-            else:
-                keys = list(pass_dict["email"].keys())
-                maximum = 0.0
-                email = ""
-
-                for item in keys:
-                    ratio = SequenceMatcher(a=user_key, b=item).ratio()
-                    if ratio > maximum and ratio > toleranz_sequence:
-                        maximum = ratio
-                        email = item
-
-                if maximum > toleranz_sequence:
-                    print((f'Der Schlüssel wurde nicht gefunden. Er konnte aber durch "{email}" mit {maximum * 100:.2f}% '
-                           'approximiert werden.\n'))
-
-                else:
-                    cprint("Der Schlüssel konnte nicht approximiert werden.", "red")
-
-            print(f"E-Mail:")
-            print(f"{email} . . {pass_dict['email'][email]}")
-
-    else:
-        print_password(pass_dict, real_key)
-
-        if not isinstance(pass_dict[real_key], (list, tuple)):
-            return pass_dict[real_key]["passwort"]
-
-
-def pass_aktualisieren(pass_dict, direct=None, pass_dict_geheim=None):
-    """Aktualisiert das passwort in dictionary form. Kann pass_dict_geheim nur aktualisieren, falls gegeben."""
-    err = Input()
-    if direct is None:
-        print("Welches Passwort möchtest du aktualisieren")
-        user_key = user_input(err, string=True)
-
-        if user_key in pass_dict:
-            real_key = user_key
-
-        else:
-            keys = list(pass_dict.keys())
-            maximum = 0.0
-            real_key = ""
-
-            for item in keys:
-                ratio = SequenceMatcher(a=user_key, b=item).ratio()
-                if ratio > maximum and ratio > toleranz_sequence:
-                    maximum = ratio
-                    real_key = item
-
-            if maximum > toleranz_sequence:
-                print((f'Der Schlüssel wurde nicht gefunden. Er konnte aber durch "{real_key}" mit {maximum * 100:.2f}% '
-                       'approximiert werden.\n'))
-
-            else:
-                cprint("Der Schlüssel konnte nicht approximiert werden.", "red")
-                return
-
-    else:
-        real_key = direct
-
-    n = 0
-
-    while True:
-        err.error = True
-
-        while err.error:
-            print("Was möchtest du verändern?")
-            try:
-                multi_key
-            except NameError:
-                multi_key = None
-
-            if isinstance(pass_dict[real_key], list) and multi_key is None:
-                err_2 = Input()
-                while err_2.error:
-                    i = print_password(pass_dict, real_key)
-                    print("Welches der Passwörter möchtest du verändern?")
-                    multi_key = user_input(err_2, max_amount=i+1)
-
-                multi_key -= 1
-
-            keys, values, i = print_password(pass_dict, real_key, multi_key)
-            print(f"{i+1}: Löschen")
-
-            if n == 0:
-                print(f"{i+2}: Abbrechen")
-            else:
-                print(f"{i+2}: Beenden")
-
-            user_change = user_input(err, max_amount=i+2, erlaubte_werte="c")
-
-            if user_change == "c":
-                DataFrame([pass_dict[real_key]["passwort"]]).to_clipboard(index=False, header=False)
-                err.error = True
-
-        if user_change == i+1:
-            if isinstance(pass_dict[real_key], (list, tuple)):
-                del pass_dict[real_key][multi_key]
-                if pass_dict_geheim is not None:
-                    del pass_dict_geheim[real_key][multi_key]
-
-                if len(pass_dict[real_key]) == 1:
-                    pass_dict.update({real_key: pass_dict[real_key][0]})
-
-            else:
-                del pass_dict[real_key]
-                if pass_dict_geheim is not None:
-                    del pass_dict_geheim[real_key]
-
-            return "del"
-
-        if user_change == i+2:
-            if n == 0:
-                return "abbr"
-            else:
-                return "aktu"
-
-        user_change -= 1
-
-        print(f"{keys[user_change].capitalize()}:")
-        print(f'Aktueller Wert: "{values[user_change]}"')
-
-        print("Neuer Wert:")
-        new_pass = user_input(err, string=True, erlaubte_werte="", random=real_key == "passwort")
-
-        if new_pass and new_pass[0] == "r":
-            try:
-                pass_len = int(new_pass[2:])
-            except ValueError:
-                pass_len = random_length
-
-            new_pass = "".join(random.SystemRandom().choice(random_password + string.digits) for _ in range(pass_len))
-
-        if user_change == 0:
-            pass_hilf = pass_dict[real_key]
-
-            del pass_dict[real_key]
-            if pass_dict_geheim is not None:
-                del pass_dict_geheim[real_key]
-
-            pass_dict.update({new_pass: pass_hilf})
-
-            real_key = new_pass
-
-        else:
-            if isinstance(pass_dict[real_key], (list, tuple)):
-                pass_dict[real_key][multi_key][keys[user_change]] = new_pass
-            else:
-                pass_dict[real_key][keys[user_change]] = new_pass
-
-        n += 1
-
-
-def pass_hinzufügen(pass_dict):
-    """Fügt ein Passwort zu pass_dict hinzu."""
-    err = Input()
-    while err.error:
-        print("Wie soll der Name des neuen Passworts sein?\n")
-        pass_name = user_input(err, string=True)
-
-    if pass_name.lower() == "email":
-        neues_passwort = {"email": {"email": "", "passwort": ""}}
-
-    else:
-        neues_passwort = {pass_name: {"email": "", "passwort": "", "username": "", "geheim": False}}
-
-    append = False
-
-    if pass_name in pass_dict:
-        err.error = True
-        while err.error:
-            print("Das eingegebene Passwort befindet sich bereits in der Datenbank mit folgenden Eigenschaften:")
-            print_password(pass_dict, pass_name)
-            print("\n")
-            print("Möchtest du")
-            print("1: Einen neuen Eintrag unter dem gleichen Namen anlegen")
-            _ = "Den"
-            if isinstance(pass_dict[pass_name], (tuple, list)):
-                _ = "Einen"
-            print(f"2: {_} vorhandenen Eintrag aktualisieren")
-            print(f"3: Den vorhandenen Eintrag mit einem neuen Passwort überschreiben")
-            aktion = user_input(err, max_amount=3)
-
-        if aktion == 1:
-            append = True
-
-        elif aktion == 2:
-            pass_aktualisieren(pass_dict, pass_name)
-            return "aktu"
-
-    n = 0
-
-    while True:
-        err.error = True
-        while err.error:
-            keys, values, i = print_password(neues_passwort, pass_name)
-
-            if n == 0:
-                print(f"{i+1}: Abbrechen")
-            else:
-                print(f"{i+1}: Fertig")
-
-            to_update = user_input(err, max_amount=i+1, erlaubte_werte="c")
-
-            if to_update == "c":
-                DataFrame([neues_passwort[pass_name]["passwort"]]).to_clipboard(index=False, header=False)
-                continue
-
-        if to_update == i + 1:
-            if n == 0:
-                return "abbr"
-
-            else:
-                if pass_name.lower() == "email":
-                    pass_dict["email"].update({neues_passwort["email"]["email"]: neues_passwort["email"]["passwort"]})
-
-                elif append:
-                    if isinstance(pass_dict[pass_name], dict):
-                        neues_passwort = [pass_dict[pass_name], neues_passwort[pass_name]]
-                        pass_dict.update({pass_name: neues_passwort})
-
-                    elif isinstance(pass_dict[pass_name], list):
-                        pass_dict[pass_name].append(neues_passwort[pass_name])
-
-                else:
-                    pass_dict.update(neues_passwort)
-
-                return "hinz"
-
-        to_update -= 1
-
-        print(f"{keys[to_update].capitalize()}:")
-        print(f'Aktueller Wert: "{values[to_update]}"')
-
-        print("Neuer Wert:")
-        new_pass = user_input(err, string=True, erlaubte_werte="", random=to_update == "passwort")
-
-        if new_pass and new_pass[0] == "r":
-            try:
-                pass_len = int(new_pass[2:])
-            except ValueError:
-                pass_len = random_length
-
-            new_pass = "".join(random.SystemRandom().choice(random_password + string.digits) for _ in range(pass_len))
-
-        if to_update == 0:
-            neues_passwort = {new_pass: neues_passwort[pass_name]}
-            pass_name = new_pass
-        else:
-            neues_passwort[pass_name][keys[to_update]] = new_pass
-
-        n += 1
-
-
-def demo():
-    """Erstellt die Demo Datei."""
-    with open(demo_file, "w+") as f:
-        pass_dict = {"email": {"DianaEbersbacher@cuvox.de": """{YTxR"2!-qkN}j^;""", "SaraBayer@cuvox.de": """')/Nzu*3-j8A/p+r"""},
-                     "Passwort 1": {"email": "NiklasAckerman@einrot.com", "passwort": """2y(MN`'qc(n,J.vr""",
-                                    "username": "Niklas1234", "geheim": False},
-                     "Passwort 2": {"email": "FrankBarth@einrot.com", "passwort": """6a3jT4m.p<,7xZw&""",
-                                    "username": "Frank1234", "geheim": True},
-                     "Passwort 3": [{"email": "MathiasFreeh@cuvox.de", "passwort": """&Vp3;,%(BST8CL}@""",
-                                    "username": "Mathias1234", "geheim": False},
-                                    {"email": "DirkBaer@cuvox.de", "passwort": """;Pvd{JK.7D5vH{+!""",
-                                    "username": "Dirk1234", "geheim": False}]
-                     }
-
-        pass_str = pass_to_string(pass_dict)
-
-        f.write(pass_str)
-
-
-def print_password(pass_dict, key, list_num=None):
-    """Gibt das Passwort mit einem bestimmten key aus."""
-    if isinstance(pass_dict[key], (list, tuple)) and list_num is None:
-        print("Dieses Passwort hat mehrere Einträge:\n")
-
-        for i, item in enumerate(pass_dict[key]):
-            print(f"{i+1}.")
-            print_password({key: item}, key)
-
-            if i != len(pass_dict[key]) - 1:
-                print("\n")
-
-        return i
-
-    else:
-        if isinstance(pass_dict[key], (list, tuple)):
-            pass_dict = {key: pass_dict[key][list_num]}
-
-        keys = ["Name"] + list(pass_dict[key].keys())
-        values = [key] + list(pass_dict[key].values())
+            return json.dumps(self, default=lambda o: o.__dict__, sort_keys=True, indent=4)
+
+    def __str__(self):
+        final_str = ""
+        keys = list(vars(self).keys())
+        values = list(vars(self).values())
 
         keys_darst = format_prec(keys, ausrichtung="links", string=True, dotted=True, dotted_len=5)
 
         for i, (key, value) in enumerate(zip(keys_darst, values), start=1):
-            print(f"{i}: {key.capitalize()}{value}")
+            if keys[i-1] != "rb" and keys[i-1] != "rb_inited":
+                final_str += f"{i}: {key.capitalize()}{value}\n"
 
-        return keys, values, i
+        return final_str[:-1]
+
+    def change(self, already_changed=False):
+        err = Input()
+        while err.error:
+            print("Was möchtest du verändern?\n")
+            print(self)
+            print(f"{len(vars(self)) + 1 - 2}: {'Bestätigen' if already_changed else 'Abbrechen'}")
+            if already_changed:
+                print(f"{len(vars(self)) + 2 - 2}: Rückgängig machen")
+
+            user_change = user_input(err, max_amount=len(vars(self)) + 2 - 2)
+
+            if user_change == len(vars(self)) + 1 - 2:
+                return True
+            elif user_change == len(vars(self)) + 2 - 2:
+                return "rollback"
+
+            cls()
+
+        err.error = True
+        while err.error:
+            print("Attribut zu verändern:")
+            print(f"{list(vars(self).items())[user_change - 1][0].capitalize()} . . .   \"{list(vars(self).items())[user_change - 1][1]}\"")
+            print("\n\nNeuer Wert:")
+            to_change = user_input(err, string=True)
+
+            if list(vars(self).items())[user_change - 1][0].lower() == "typ":
+                to_change = to_change.strip()
+                append = None
+                if to_change[0] == "+":
+                    append = True
+                    to_change = to_change[1:].strip()
+                if to_change[0] == "-":
+                    append = False
+                    to_change = to_change[1:].strip()
+
+                if append is None:
+                    self.typ = []
+                    append = True
+
+                to_change = to_change.split(",")
+                for item in to_change:
+                    if append:
+                        self.typ.append(item)
+
+                    else:
+                        if item in self.typ:
+                            self.typ.remove(item)
+                print(self.typ)
+                return
+
+            elif list(vars(self).items())[user_change - 1][0].lower() == "password":
+                changes = to_change.lower().split()
+                if changes[0] == "r":
+                    if len(changes) == 1:
+                        changes += [random_length]
+                    try:
+                        to_change = random_passwordgen(int(changes[1]), changes[2:])
+                    except ValueError:
+                        pass
+
+            elif list(vars(self).items())[user_change - 1][0].lower() == "geheim":
+                if to_change.lower() in true_accept:
+                    to_change = True
+                else:
+                    to_change = False
+
+            setattr(self, list(vars(self).items())[user_change - 1][0], to_change)
+
+    def __eq__(self, other):
+        if isinstance(other, Password):
+            return self.name == other.name
+        elif isinstance(other, str):
+            return self.name == other
+
+    def rb_init(self):
+        self.rb = vars(self).copy()
+        self.rb_inited = True
 
 
-def check_exists():
-    """Überprüft, ob die jeweiligen datein existieren"""
-    encrypted_exists = True
-    clean_exists = True
-    demo_exists = True
-    try:
-        open(encrypted_file)
-    except FileNotFoundError:
-        encrypted_exists = False
+    def rollback(self):
+        if not self.rb_inited:
+            print("Rollback not Initiated!")
+            return
 
-    try:
-        open(clean_file)
-    except FileNotFoundError:
-        clean_exists = False
+        for key, value in self.rb.items():
+            setattr(self, key, value)
 
-    try:
-        open(demo_file)
-    except FileNotFoundError:
-        demo_exists = False
 
-    return encrypted_exists, clean_exists, demo_exists
+def dump_pw(pw_list, to_file=False):
+    if not isinstance(pw_list, (tuple, list)):
+        pw_list = [pw_list]
+
+    final_str = "[\n" + ",\n".join(item.to_json() for item in pw_list) + "\n]"
+
+    if to_file:
+        with open(clean_file, "w+") as cf:
+            cf.write(final_str)
+
+    return final_str
+
+
+def inst_pw(pw_str):
+    return [Password(**item) for item in json.loads(pw_str)]
+
+
+def demo():
+    """Erstellt die Demo Datei."""
+    pw = (
+        Password("Email", email="DianaEbersbacher@cuvox.de", password="""{YTxR"2!-qkN}j^;""", typ="email"),
+        Password("Email", email="SaraBayer@cuvox.de", password="""')/Nzu*3-j8A/p+r""", typ="email"),
+
+        Password("Passwort 1", "NiklasAckerman@einrot.com", "2y(MN`'qc(n,J.vr", "Niklas1234", "Diese Website", False,
+                 typ="party"),
+        Password("Passwort 2", "FrankBarth@einrot.com", "6a3jT4m.p<,7xZw&", "Frank1234", "Die andere", True, typ="party"),
+        Password("Passwort 3", "MathiasFreeh@cuvox.de", "&Vp3;,%(BST8CL}@", "Mathias1234", "Diese Website", False,
+                 typ="party"),
+        Password("Passwort 3", "DirkBaer@cuvox.de", ";Pvd{JK.7D5vH{+!", "Dirk1234", "", False),
+    )
+    with open(demo_file, "w+") as f:
+        f.write(dump_pw(pw))
+
+
+def random_passwordgen(n, typ=[]):
+    pass_list = []
+    if "lower" in typ:
+        pass_list.append(string.ascii_lowercase)
+    if "upper" in typ:
+        pass_list.append(string.ascii_uppercase)
+    if "digits" in typ or "number" in typ or "numbers" in typ:
+        pass_list.append(string.digits)
+    if "sonder" in typ:
+        pass_list.append(string.printable[10 + 26 * 2:94])
+
+    pass_list = "".join(pass_list)
+
+    if not typ:
+        pass_list = random_password
+
+    return "".join(random.SystemRandom().choice(pass_list) for _ in range(n))
 
 
 def key_generator(password):
@@ -1294,8 +1054,7 @@ def encrypter(file_name=clean_file, string=False):
         encrypted = _encrypter(user_password, file_name)
     else:
         with open(file_name, "r") as f:
-            contents = f.read()
-            encrypted = _encrypter(user_password, contents)
+            encrypted = _encrypter(user_password, f.read())
 
     with open(encrypted_file, "w+") as f:
         f.write(encrypted)
@@ -1307,10 +1066,9 @@ def _decrypter(password, text):
     password = password.encode()
 
     kdf = PBKDF2HMAC(algorithm=algorithm, length=length, salt=salt, iterations=iterations, backend=backend)
+
     key = base64.urlsafe_b64encode(kdf.derive(password))
     f = Fernet(key)
-
-
 
     decrypted = f.decrypt(text.encode()).decode()
 
@@ -1320,48 +1078,437 @@ def _decrypter(password, text):
 def decrypter(file_name=clean_file):
     """Entschlüsselt eine gegebene datei mit Passwortpromt. Geheimes Passwort wird unterstützt."""
     geheim_pass = ""
+    i = 0
     while True:
         print("Bitte Passwort eingeben:\n")
         user_password = getpass()
         cls()
 
-        if user_password in geheime_passwörter:
-            geheim_pass = user_password
-            cprint("Das Passwort ist Falsch!\n", "yellow")
-            continue
-
         try:
             with open(encrypted_file, "r") as f:
+
+
                 decrypted = _decrypter(user_password, f.read())
+
 
                 break
 
         except InvalidToken:
-            cprint("Das Passwort ist Falsch!\n", "red")
+            cprint("\nDas Passwort ist Falsch!", "red")
+            if i+2 > passwort_hinweis_num and passwort_hinweis:
+                cprint(f'Der Passworthinweis ist: "{passwort_hinweis}"\n', "yellow")
+            else:
+                print()
+            i += 1
 
-    return user_password, geheim_pass, decrypted
+    return user_password, decrypted
 
 
-length = 32
-backend = default_backend()
+def name_solver(passwords, user_key, select=None, typ=None):
+    if select is None:
+        select = "name"
+
+    passwords = [item for item in passwords if typ is None or typ in getattr(item, "typ")]
+    namen = [str(getattr(item, select)).lower() for item in passwords]
+
+    if user_key.lower() in namen:
+        return user_key.lower()
+
+    maximum = -1
+    for item, password in zip(namen, passwords):
+        ratio = SequenceMatcher(a=user_key, b=item).ratio()
+        if ratio > maximum and ratio >= toleranz_sequence:
+            maximum = ratio
+            real_key = item
+
+    if maximum != -1:
+        print((f'Der Schlüssel wurde nicht gefunden. Er konnte aber durch "{real_key.capitalize()}" mit {maximum * 100:.2f}% '
+               'approximiert werden.\n'))
+        return real_key
+
+    else:
+        cprint("\nDer Schlüssel konnte nicht approximiert werden.", "red")
+        return
+
+
+def resolve_name(passwords, user_key, select=None, typ=None, choose=True):
+    if select is None:
+        select = "name"
+
+    passwords = [item for item in passwords if typ is None or typ in getattr(item, "typ")]
+    namen = [str(getattr(item, select)).lower() for item in passwords]
+
+    if user_key not in namen:
+        real_key = name_solver(passwords, user_key, select, typ)
+        if real_key is None:
+            return
+    else:
+        real_key = user_key.lower()
+
+    num = namen.count(real_key)
+
+    if num == 1:
+        return passwords[namen.index(real_key)]
+
+    elif num > 1:
+        err = Input()
+        while err.error:
+            print(f"Dieses Passwort besitzt mehr als 1 Eintrag ({num}){'. Welches möchtest du wählen?' if choose else ''}\n")
+            pw_kandidaten = [item for item in passwords if str(getattr(item, select)).lower() == real_key]
+            for i, item in enumerate(pw_kandidaten, start=1):
+                print(f"{i}:\n")
+                print(item)
+                print()
+
+            if choose is False:
+                return pw_kandidaten
+
+            auswahl = user_input(err, max_amount=num)
+
+        return pw_kandidaten[auswahl - 1]
+
+
+def get_pw_user(passwords, geheim_care=True, choose=False, delete=False):
+    err = Input()
+    # Geheime Passwörter filtern
+    passwords = [item for item in passwords if geheim_care is False or item.geheim is False]
+
+    select = "name"
+    filt = None
+    solve_name = True
+    while err.error:
+        if delete is False:
+            print("Für was möchtest du das Passwort wissen?")
+        else:
+            print("Welches Passwort möchtest du löschen?")
+        user_key = user_input(err, string=True, min_amount=False)
+        if err.error is False and user_key.lower() in show:
+            cls()
+            if passwords:
+                for item in passwords:
+                    print(item)
+                    print("\n")
+            else:
+                print("Es gibt keine Passwörter!")
+            err.error = True
+            continue
+
+        if err.error is False and user_key.split()[0].lower() == "select":
+            if user_key.split()[1].lower() not in passwords[0].__dict__.keys():
+                cprint("Das auszuwählende Attribut ist nicht in den verfügbaren Attributen\n", "red")
+                err.error = True
+                continue
+            select = user_key.split()[1].lower()
+
+            print(f"Erfolgreich {select.capitalize()} als suchattribut gewählt")
+            err.error = True
+
+        if err.error is False and user_key.split()[0].lower() == "filter":
+            filt = user_key.split()[1].lower()
+            _ = []
+            for item in passwords:
+                if isinstance(item.typ, (list, tuple)):
+                    if filt in item.typ:
+                        _.append(item)
+                else:
+                    if filt == item.typ:
+                        _.append(item)
+            passwords = _
+
+            if filt == "email":
+                select = "email"
+            print(f"Erfolgreich nach {filt.capitalize()} gefiltert\n")
+            err.error = True
+
+        if err.error is False and "@" in user_key:
+            if select == "name":
+                select = "email"
+                passwords = [item for item in passwords if "email" in item.typ]
+
+        if err.error is False and filt == "email":
+            try:
+                user_key = int(user_key)
+                for item in passwords:
+                    if item.email == f"freezepro{user_key}@gmail.com":
+                        pw = item
+                        solve_name = False
+                        break
+            except ValueError:
+                pass
+
+    if solve_name:
+        pw = resolve_name(passwords, user_key, select, filt, choose=choose)
+
+    return pw
+
+
+def read_pass(passwords, geheim_care=True):
+    """Liest das Passwort aus einer Liste von Passwörtern aus."""
+    pw = get_pw_user(passwords, geheim_care)
+    if pw is not None and not isinstance(pw, (list, tuple)):
+        print(pw)
+    return pw
+
+
+def change_pass(passwords, geheim_care=True, direct=False):
+    """Aktualisiert das Passwort in Listen form."""
+    global state
+    if direct is False:
+        pw = get_pw_user(passwords, geheim_care, choose=True)
+
+    pw.rb_init()
+    check = False
+    while True:
+        ret = pw.change(check)
+        if ret == "rollback":
+            pw.rollback()
+            check = False
+            pw.rb_init()
+            continue
+        if ret:
+            if check:
+                state = "updated"
+            else:
+                state = "aborted"
+            return pw
+        else:
+            print("Erfolgreich verändert\n")
+        check = True
+    return pw
+
+
+def add_pass(passwords, geheim_care=True):
+    """Fügt ein Passwort der liste hinzu"""
+    err = Input()
+    while err.error:
+        print("Wie soll der Name des neuen Passworts sein?\n")
+        pass_name = user_input(err, string=True)
+
+    namen = [item.name for item in passwords if geheim_care is False or item.geheim is False]
+
+    append = True
+    if pass_name in namen:
+        err.error = True
+        while err.error:
+            print("Das eingegebene Passwort befindet sich bereits in der Datenbank mit folgenden Eigenschaften:")
+            for item in [item for item in passwords if item.name.lower() == pass_name.lower()]:
+                print()
+                print(item)
+            print("\n")
+            print("Möchtest du")
+            print("1: Einen neuen Eintrag unter dem gleichen Namen anlegen")
+            _ = "Den", "Den", "Eintrag"
+            if namen.count(pass_name) > 1:
+                _ = "Einen", "Die", "Einträge"
+            print(f"2: {_[0]} vorhandenen Eintrag aktualisieren")
+            print(f"3: {_[1]} vorhandenen {_[2]} mit einem neuen Passwort überschreiben")
+            aktion = user_input(err, max_amount=3)
+
+        if aktion == 2:
+            if namen.count(pass_name) > 1:
+                err.error = True
+                while err.error:
+                    print("Welchen der Einträge möchtest du verändern?")
+                    nr = user_input(err, max_amount=namen.count(pass_name))
+                    pw = passwords
+
+            return pass_aktualisieren(passwords, geheim_care, pass_name)
+
+
+        elif aktion == 3:
+            append = False
+
+    pw = Password(pass_name)
+
+    check = False
+    while True:
+        if pw.change(check):
+            if check:
+                if not append:
+                    try:
+                        while True:
+                            passwords.remove(pass_name)
+                    except ValueError:
+                        pass
+                passwords.append(pw)
+            global state
+            state = "added"
+            return pw
+
+        check = True
+
+
+def delete_pass(passwords, secret_care=True, direct=False):
+    global state
+    if direct is False:
+        pw = get_pw_user(passwords, secret_care, choose=True, delete=True)
+
+    if pw is None:
+        return
+
+    print("Das folgende Passwort wird gelöscht:\n")
+    print(pw)
+    cprint("\nDies kann nicht rückgängig gemacht werden. Bitte bestätigen um Fortzufahren", "red")
+    accept = user_input(Input(), string=True)
+    if accept not in true_accept:
+        state = "aborted"
+        return
+
+    for i, item in enumerate(passwords):
+        if pw is item:
+            passwords.pop(i)
+            state = "removed"
+            break
+    else:
+        state = "bug"
+
+
+def check_exists():
+    """Überprüft, ob die jeweiligen datein existieren"""
+    encrypted_exists = True
+    clean_exists = True
+    demo_exists = True
+    legacy_exists = True
+    try:
+        open(encrypted_file)
+    except FileNotFoundError:
+        encrypted_exists = False
+
+    try:
+        open(clean_file)
+    except FileNotFoundError:
+        clean_exists = False
+
+    try:
+        open(demo_file)
+    except FileNotFoundError:
+        demo_exists = False
+
+    try:
+        open(legacy_file)
+    except FileNotFoundError:
+        legacy_exists = False
+
+    if use_legacy:
+        clean_exists = legacy_exists
+
+    return encrypted_exists, clean_exists, demo_exists, legacy_exists
+
+
+def convert_from_legacy(legacy_file=legacy_file):
+    *_, legacy_exists = check_exists()
+    if not legacy_exists:
+        return
+
+    with open(legacy_file) as f:
+        password_string = f.read()
+
+    if "__________________________________________________" in password_string:
+        password_string = password_string.split("__________________________________________________")[1]
+    else:
+        print("Die Anzahl der Unterstriche, die das Format und die Passwörter trennen sind nicht wie erwartet.")
+        print("Dies kann behoben werden indem du die Unterstiche durch diese ersetzt:\n")
+        print("\"__________________________________________________\"")
+
+    password_string = password_string.replace("\r", "")
+
+    pw = password_string.split("\n-------------------------\n")[1::2]
+    iter_list = ["email", "passwort", "username", "geheim"]
+
+    password_list = []
+
+    for i, item in enumerate(pw):
+        item = item.split("\n")
+        typ = None
+        geheim = False
+        if item[0].lower() == "email":
+            typ = "email"
+        else:
+            geheim = item.pop()
+
+
+        password_list.append(Password(*item, geheim=geheim, typ=typ))
+
+    return password_list
+
+
+def listen_keys(kill_event, start_event):
+    def on_press(kill_event, start_writing, key):
+        print(key)
+        if key == esc_pw_key:
+            kill_event.set()
+            sys.exit(0)
+        if key == enter_pw_key:
+            kill_event.set()
+            start_event.set()
+            sys.exit(0)
+
+    with keyboard.Listener(on_press=partial(on_press, kill_event, start_event)) as listener:
+        listener.join()
+
+
+def press_keys(to_press, kill_event, start_event):
+    kb = keyboard.Controller()
+    while True:
+        if start_event.is_set():
+            kb.type(to_press)
+            sys.exit(0)
+        elif kill_event.is_set():
+            sys.exit(0)
+        else:
+            time.sleep(0.01)
+
+
+def press_password(password):
+    if isinstance(password, (list, tuple)):
+        err = Input()
+        while err.error:
+            print(f"Dieses Passwort besitzt mehr als 1 Eintrag ({len(password)}). Welches möchtest du wählen?\n")
+            for i, item in enumerate(password, start=1):
+                print(f"{i}:\n")
+                print(item)
+                print()
+
+            auswahl = user_input(err, max_amount=len(password))
+
+        password = password[auswahl - 1]
+
+    start = Event()
+    kill = Event()
+    write_thread = Process(target=press_keys, args=(password.password, kill, start))
+    listen_thread = Process(target=listen_keys, args=(kill, start))
+
+    print(f'Die Einzugebende Kombination ist: "{enter_pw_key}", um diesen Modus zu verlassen bitte "{esc_pw_key}" drücken')
+    write_thread.start()
+    listen_thread.start()
+
+    write_thread.join()
+    listen_thread.join()
+
+    global state
+    if kill.is_set() and start.is_set():
+        state = "enter_pw written"
+    elif kill.is_set() and not start.is_set():
+        state = "aborted"
+    else:
+        state = "bug"
 
 
 def main():
-    """Haupt Funktion für den Manager."""
+    """Haupt Funktion"""
+    global state
     err = Input()
-    geheim = False
+    secret = True
     while True:
-        encrypted_exists, clean_exists, demo_exists = check_exists()
+        encrypted_exists, clean_exists, demo_exists, legacy_exists = check_exists()
         while err.error:
-            erlaubte_werte = [1, 3]
-
+            accepted_val = [1, 3]
             print("Was möchtest du tun?\n")
-
             print("1: Passwort eingeben")
 
             if clean_exists:
                 print(f"2: Verschlüsselte Datei aus {clean_file} erstellen")
-                erlaubte_werte.append(2)
+                accepted_val.append(2)
             else:
                 print()
 
@@ -1370,41 +1517,43 @@ def main():
             else:
                 print("3: Demo Datei erstellen")
 
-            aktion = user_input(err, max_amount=False, erlaubte_werte=erlaubte_werte + geheime_passwörter)
+            if legacy_exists:
+                print(f"4: {legacy_file} konvertieren und in {clean_file} schreiben")
+                accepted_val.append(4)
+
+            action = user_input(err, max_amount=False, erlaubte_werte=accepted_val)
 
         err.error = True
-
-        if aktion == 1:
+        if action == 1:
             if encrypted_exists:
-                user_password, geheim_pass, decrypted = decrypter(encrypted_file)
 
-                if geheim_pass in geheime_passwörter:
-                    geheim = True
+                user_password, decrypted = decrypter(encrypted_file)
+
 
             else:
                 err.error = True
                 while err.error:
-                    erlaubte_werte = []
+                    accepted_val = []
                     print("Es wurde keine verschlüsselte Datei gefunden. Was möchtest du tun?\n")
                     if clean_exists:
                         print(f"1: Eine verschlüsselte Datei aus {clean_file} erstellen")
-                        erlaubte_werte.append(1)
+                        accepted_val.append(1)
 
                     if demo_exists:
                         print(f"2: Eine verschlüsselte Datei aus {demo_file} erstellen")
-                        erlaubte_werte.append(2)
+                        accepted_val.append(2)
 
                     print(f"3: Eine neue Datenbank anlegen")
 
-                    aktion = user_input(err, min_amount=3, max_amount=3, erlaubte_werte=erlaubte_werte)
+                    action = user_input(err, min_amount=3, max_amount=3, erlaubte_werte=accepted_val)
 
-                if aktion in [1, 2]:
-                    if aktion == 1:
+                if action in [1, 2]:
+                    if action == 1:
                         file = clean_file
-                    elif aktion == 2:
+                    elif action == 2:
                         file = demo_file
 
-                    user_password = encrypter(file)
+                    encrypter(file)
 
                     cprint("\nVerschlüsselte Datei erfolgreich erstellt\n\n", "green")
 
@@ -1412,19 +1561,16 @@ def main():
                         decrypted = f.read()
 
                     encrypted_exists = True
-                    geheim_pass = ""
 
-                elif aktion == 3:
-                    pass_dict = {"email": {}}
-                    pass_dict_geheim = copy.deepcopy(pass_dict)
-
+                elif action == 3:
+                    passwords = []
             break
 
-        elif aktion == 2:
+        elif action == 2:
             encrypter(clean_file)
             cprint("\nVerschlüsselte Datei erfolgreich erstellt\n\n", "green")
 
-        elif aktion == 3:
+        elif action == 3:
             if demo_exists:
                 encrypter(demo_file)
 
@@ -1433,125 +1579,111 @@ def main():
             else:
                 demo()
 
+        elif action == 4:
+            passwords = convert_from_legacy(legacy_file)
+            dump_pw(passwords, to_file=True)
+            cprint("\nErfolgreich überschrieben!\n\n", "green")
+
+
     if encrypted_exists:
-        pass_dict = pass_to_dict(decrypted, geheim_pass)
-        pass_dict_geheim = pass_to_dict(decrypted, geheime_passwörter[0])
+        if use_legacy and legacy_exists:
+            passwords = convert_from_legacy(legacy_file)
+        else:
+            passwords = inst_pw(decrypted)
 
     err = Input()
-
-    passw = None
+    enter_pw = None
 
     while True:
-        ret = None
         while err.error:
             print("Was möchtest du tun?\n")
             print("1: Password auslesen")
             print("2: Passwort aktualisieren")
             print("3: Passwort hinzufügen")
-            print("4: Verschlüsselte Datei aus aktuellem Passwort erstellen")
-            print("5: Textdatei aus aktuellem Passwort erstellen")
+            print("4: Passwort löschen")
+            print("5: Letztes Passwort eingeben")
+            print("6: Verschlüsselte Datei aus aktuellem Passwort erstellen")
+            print("7: Textdatei aus aktuellem Passwort erstellen")
             if clean_exists:
-                print(f"6: Verschlüsselte Datei aus {clean_file} erstellen")
-            print("7: Beenden")
-            aktion = user_input(err, max_amount=7, erlaubte_werte=["c"] + geheime_passwörter)
+                print(f"8: Verschlüsselte Datei aus {clean_file} erstellen")
+            print("9: Beenden")
+            action = user_input(err, max_amount=9, erlaubte_werte=["c"] + [secret_password])
 
         err.error = True
 
-        if aktion in geheime_passwörter:
-            pass_dict = pass_dict_geheim
+        if action == secret_password:
+            secret = False
 
-        if aktion == "c":
-            DataFrame([passw]).to_clipboard(index=False, header=False)
-            err.error = True
+        if action == 1:
+            enter_pw = read_pass(passwords, secret)
 
-        elif aktion == 1:
-            passw = pass_auslesen(pass_dict)
+        elif action == 2:
+            enter_pw = change_pass(passwords, secret)
 
-        elif aktion == 2:
-            ret = pass_aktualisieren(pass_dict, pass_dict_geheim=pass_dict_geheim)
+        elif action == 3:
+            enter_pw = add_pass(passwords)
 
-        elif aktion == 3:
-            ret = pass_hinzufügen(pass_dict)
+        elif action == 4:
+            delete_pass(passwords, secret)
 
-        elif aktion == 4:
-            encrypter(pass_to_string(pass_dict_geheim), string=True)
-            ret = "encr_aktu"
+        elif action == 5:
+            if enter_pw is None:
+                cprint("\nEs gibt kein letztes Passwort!\n", "red")
+                err.error = True
+                continue
 
-        elif aktion == 5:
-            pass_string = pass_to_string(pass_dict_geheim)
+            press_password(enter_pw)
 
-            with open(clean_file, "w+") as f:
-                f.write(pass_string)
+        elif action == 6:
+            encrypter(dump_pw(passwords), string=True)
+            state = "dumped to encrypted"
 
-            ret = "text_aktu"
+        elif action == 7:
+            dump_pw(passwords, to_file=True)
+            state = "dumped to text"
 
-        elif aktion == 6:
+        elif action == 8:
             encrypter(clean_file)
-            ret = "encr_pass"
+            state = "encrypted from clean"
 
-        elif aktion == 7:
+        elif action == 9:
             break
 
         print()
 
-        if ret == "hinz":
+        if state == "added":
             cprint("Erfolgreich hinzugefügt", "green")
 
-        elif ret == "abbr":
+        elif state == "aborted":
             cprint("Erfolgreich abgebrochen", "green")
 
-        elif ret == "aktu":
+        elif state == "updated":
             cprint("Erfolgreich aktualisiert", "green")
 
-        elif ret == "del":
+        elif state == "removed":
             cprint("Erfolgreich gelöscht", "green")
 
-        elif ret == "text_aktu":
+        elif state == "dumped to text":
             cprint("Textdatei aus aktuellem Passwort erfolgreich erstellt!", "green")
 
-        elif ret == "encr_aktu":
+        elif state == "dumped to encrypted":
             cprint("Verschlüsselte Datei aus aktuellem Passwort erfolgreich erstellt", "green")
 
-        elif ret == "encr_pass":
+        elif state == "encrypted from clean":
             cprint(f"Verschlüsselte Datei aus {clean_file} erfolgreich erstellt", "green")
 
-        if ret is not None:
-            print("\n")
+        elif state == "bug":
+            cprint(f"Es ist ein Bug aufgetreten! Dieser Zustand sollte nie erreicht werden... Super Arbeit Mattis!", "red")
 
-        pass_dict_geheim.update(pass_dict)
+        elif state == "enter_pw written":
+            cprint(f"Erfolgreich eingegeben", "green")
+
+        if state is not None:
+            print()
+
+        state = None
 
 
 if __name__ == "__main__":
     main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
