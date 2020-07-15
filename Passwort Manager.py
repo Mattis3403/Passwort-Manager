@@ -975,9 +975,6 @@ def dump_pw(pw_list, to_file=False):
 
 
 def inst_pw(pw_str):
-    print(pw_str)
-    for item in json.loads(pw_str):
-        print(f"{dict(**item)}")
     return [Password(**item) for item in json.loads(pw_str)]
 
 
