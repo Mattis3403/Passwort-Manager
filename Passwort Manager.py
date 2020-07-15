@@ -34,7 +34,7 @@ legacy_file = "pass.legacy"
 
 
 # Legacy Datei benutzen:
-use_legacy = True
+use_legacy = False
 
 
 # Zufälliges Passwort:
