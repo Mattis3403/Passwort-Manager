@@ -20,7 +20,7 @@ Jetzt kannst du den Passwort Manager öffnen.
 
 
 Tutorial:
-──────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────────────────
 "Passwort Manager.py" öffnen
 
 2 Möglichkeiten: Demo oder Echte Datenbank.
@@ -43,10 +43,10 @@ Falls mehrere Passwörter mit dem gleichen Namen: Entweder:
 	3 - Alle löschen und neuer Eintrag
 
 4 (Passwort löschen):
-Ein Passwort löschen mit Bestätigung: "j", "ja", "y" etc. Kann angepasst werden.
+Ein Passwort löschen mit Bestätigung: `"j", "ja", "y"` etc. Kann angepasst werden.
 
 5 (Letztes Passwort eingeben):
-Das letzte Passwort mit einem bestimmten Hotkey (kann angepasst werden)
+Das letzte Passwort mit einem bestimmten Hotkey (veränderbar)
 eingeben lassen. Ist besser, da das Passwort nicht in die Zwischenablage kopiert wird.
 
 6 (Verschlüsselte Datei aus aktuellem Passwort erstellen):
@@ -100,10 +100,10 @@ sonder
 Falls keine typen gesetzt sind, wird die Standardeinstellung genommen (veränderbar). 
 Alle zeichen sind gleichverteilt.
 
-──────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────────────────
 
 Veränderbares:
-──────────────────────────────────────────────────────────────────────────────────────
+─────────────────────────────────────────────────────────────────────────
 Hier ein kleiner Abschnitt zu veränderbaren Einstellungen. Diese müssen in der
 "Passwort Manager.py" Datei verändert werden und nicht hier.
 DIESE EINSTELLUNGEN HIER ZU VERÄNDERN BRINGT NICHTS!!!
@@ -125,7 +125,7 @@ Standardeinstellung für das zufällige Passwort. Falls manche Buchstaben nicht 
 random_password = string.printable[:94]  # Standardeinstellung
 
 random_passwort = ["a", "b", "c", "D", "E", 1, 2, 3, "&", "@", "'"]  # Eigenes Passwort als Liste 
-																-> weitere Einträgt mit "," seperieren
+                                                              -> weitere Einträgt mit "," seperieren
 
 random_passwort = "abcDE123&@'"  # Eigenes Passwort als String
 ```
@@ -216,6 +216,3 @@ Algorithmus zum verschlüsseln:
 ```
 algorithm = hashes.SHA3_512()
 ```
-
-
-──────────────────────────────────────────────────────────────────────────────────────
