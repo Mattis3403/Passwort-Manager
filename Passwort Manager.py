@@ -7,72 +7,115 @@ import random
 import string
 import time
 import sys
+import subprocess
+
 from difflib import SequenceMatcher
 from getpass import getpass
 from numbers import Number
-
-from cryptography.fernet import Fernet
-from cryptography.fernet import InvalidToken
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import hashes
-from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from pynput import keyboard
 from multiprocessing import Process, Event
 from functools import partial
 
+
+os.system('cls' if os.name == 'nt' else 'clear')
+
+
+def install(package):
+    subprocess.check_call([sys.executable, "-m", "pip", "install", package])
+
+
+try:
+    from cryptography.fernet import Fernet
+    from cryptography.fernet import InvalidToken
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+except ImportError:
+    print("Das Modul cryptography wurde nicht gefunden. Es wird installiert:")
+    install("cryptography")
+    print("\n")
+
+    from cryptography.fernet import Fernet
+    from cryptography.fernet import InvalidToken
+    from cryptography.hazmat.backends import default_backend
+    from cryptography.hazmat.primitives import hashes
+    from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+try:
+    from pynput import keyboard
+except ImportError:
+    print("Das Modul pynput wurde nicht gefunden. Es wird installiert:")
+    install("pynput")
+    print("\n")
+    from pynput import keyboard
+
+try:
+    from func_timeout import func_timeout, FunctionTimedOut
+except ImportError:
+    print("Das Modul func_timeout wurde nicht gefunden. Es wird installiert:")
+    install("func_timeout")
+    print("\n")
+    from func_timeout import func_timeout, FunctionTimedOut
+
+
+"""
+Ab Hier kann verändert werden
+------------------------------------------------------------------
+"""
 # Ein "#" kommentiert eine Zeile aus.
 
 # Veränderbare Einstellungen:
 
-
-# Dateinamen:
+#
+# Dateinamen mit Dateierweiterung:
 
 clean_file = "Pass.clean"
 encrypted_file = "Pass.encrypted"
 demo_file = "Pass.demo"
-legacy_file = "pass.legacy"
+legacy_file = "Pass.legacy"
 
+# Dateinamen mit .txt
 
+# clean_file = "Pass_clean.txt"
+# encrypted_file = "Pass_encrypted.txt"
+# demo_file = "Pass_demo.txt"
+# legacy_file = "Pass_legacy.txt"
+
+#
 # Legacy Datei benutzen:
-use_legacy = True
+use_legacy = False
 
-
+#
 # Zufälliges Passwort:
 
-# Du kannst entweder alle Werte, die im zufälligen Passwort enthalten
-# sein sollen in eine Liste schreiben:
-
-# random_password = ["a", "b", "c", "1", "2", "3", "😀"]
-
-# oder als String von Charakteren:
-# random_password = r"abc123😀"
-# random_password = r"""abc123😀"""
-
-# Wenn du sie in einen String schreibst ist es wichtig die r"""  """ zu setzen. Ansonsten werden bestimmte Charaktere
-# anders interpretiert.
-
 # Normales Passwort mit allen Sonderzeichen:
-random_password = string.printable[:94]
+random_password = string.printable[:94]  # Standardeinstellung
+
+# Du kannst entweder alle Werte, die im zufälligen Passwort enthalten sein sollen in eine Liste schreiben:
+
+# random_passwort = ["a", "b", "c", "D", "E", 1, 2, 3, "&", "@", "'"]  # Eigenes Passwort als Liste
+# 																-> weitere Einträgt mit "," seperieren
+
+# random_passwort = r"""abcDE123&@'"""  # Eigenes Passwort als String
+
+# Wenn du sie in einen String schreibst ist es wichtig die r"""  """ zu setzen.
+# Ansonsten werden bestimmte Charaktere anders interpretiert.
 
 # Hier kann die standardmäßige Länge des zufälligen Passwortes angepasst werden.
 random_length = 32
 
-
+#
 # Geheimes Passwort:
 secret_password = "1234"
 
-
-# Werte, die für geheim als Wahr angenommen werden sollen:
+# Werte, die als Wahr ausgewertet werden sollen:
 true_accept = ["j", "ja", "y", "yes", "ye", "t", "true"]
-
 
 # Alle verfügbaren Passwörter anzeigen:
 show = ["show", "show all"]
 
-
 # Minimale Toleranz:
 toleranz_sequence = 0.1
-
 
 # Passworthinweis:
 passwort_hinweis = "Bitte benutze deine Arme!"
@@ -82,11 +125,31 @@ passwort_hinweis = "Bitte benutze deine Arme!"
 # Nach wie vielen falschen Versuchen der Hinweis angezeigt werden soll
 passwort_hinweis_num = 2
 
+# Zeit, die zwischen polling vergeht (in Sekunden)
+sleep_time = 0.0001
+
+# Wie viele Sekunden du für Input Zeit hast
+timeout_time = 5 * 60
 
 # Taste die gedrückt wird um Passwort eingeben zu lassen, zweite um den Modus zu verlassen
 # 100 000 Stellen eingeben bei mir: 28 sek
-enter_pw_key = keyboard.Key.delete
-esc_pw_key = keyboard.Key.esc
+
+# Mapping auf "normale" keys, die nichts eingeben:
+password_mapping = "normal"
+esc_key = keyboard.Key.esc
+website_key = keyboard.Key.end
+username_key = keyboard.Key.home
+email_key = keyboard.Key.page_down
+password_key = keyboard.Key.delete
+
+
+# # Mapping auf numpad, letzte Eingabe wird gelöscht - Funktioniert noch nicht
+# password_mapping = "numpad"
+# esc_key = keyboard.Key.esc
+# website_key = 97  # Numpad 1
+# username_key = 98  # Numpad 2
+# email_key = 99  # Numpad 3
+# password_key = keyboard.Key.delete
 
 
 # WENN DU EINEN DIESER WERTE VERÄNDERST FUNKTIONIERT DIE ENCRYPTED DATEI NICHT MEHR!
@@ -100,14 +163,19 @@ os.urandom(128)
 """
 # Die 128 kannst du auch ändern, je nachdem wie sicher du es haben willst. Mehr als 1024 bringt es nicht.
 
-salt = b"""\xd2\x16"\xd81\xb8\xba_\x12\xad\x04\xdd\xa0\xde\x81\x1eN\xc45\xf0\xf2\x12\xc6\xb4\xc2>\x97h\xb6\x0f-\xdb5\xf4\xe7\xfa-\x85\xcaV\x1eZ\xfd\xdf\x0e\xe8\x81\xa2\x92"\xec\xba.\x1e\xa7\xe4\xdf9{\x85\x94\xfa\xc2\xabZ\xfa\xa9I/o.s\x1b\x13|\x9f\x03\xc7\xd1\xa7\xca\x8d\x13\x88\xaf\xbbzg\xa6\x99\x1b\x0c\xec\xefw\x85d,F\xf3\xa0b\xa6\xd9\xe4\xf9{A\x14\xd6\x99RS\xe1q\x1aV\xe5\xe7}t&\xcd\xb9\xac\xa1\x95\xaa\xf4\xdc\xa6p\xad\t\xca\xb8x\xfbw\x0b\xd6\xdd\xad\x1b\xf6\x04\xab\xc2\xa4\x7fs\x9d\xdd^\r\xbf\x0f\xbc\xd4zi\x1b\xd4\xeaB\x9f/\xaf-\xb4\xc5\x04\xe8F\xc7\xa2\x1e8\xca\x8c\xb2\xe0\xce\xdc\x1d\x1e\x7f\xee\x8b^\n\x85\xf0O\xaf\x04\n\x00\xaf\xbb]P\x1e\xa5=\xcb\xdb\xe7.\x88\xcb\x14\xcb"\xe0c\xda\x11,!h6\x17S\xbf\x86\xee\xe0\x8d[:\xce(\xbf!\x00\xc97!AvEp\x8b\xa6\xba\t-~I\x8a\xe6<\xda\xb0\xb0\x12\xb7\x839Js_I\xeaG\xe5\xc0It\xfa\xd5\x05\xa8\x1df\xe64W)\x17F\xe6\x9c%\x1f/\xa4nN\xe0p\xf8m\xe4g\x15\xc9\x93\x8b\x024\x19\xe5\xab\xbc\x11=4\xf4\xc4\x98\x92x\xda8\x96]\x02\xe6\xecc\xbe`\xf5\xe1\x1c\xe6\x17\xaa\x8c\xe2F\x1eW\xd1\xbdN\xf22\xa0\xd0\xaf\xfa_\x06\x18<\xe6N\x92k\x1e\x96\xc7\xe3H3u\x19\xe1\xf2\x99\x96\x8f\xb2\x9e9\xab\x12\x19\xf2AP\x7f4\xfa\xe283pb\xab\xc5RK\x14\x94de\xef\xa5\xe6L\x13\x97{\x04M\\\xe7(\x11\xd7\xbe\xc6\xc0\x0f\xc5[:\xbb\x8e\xff^5\xcd\xa7\xa5\x80\xf8\'\xfe\x198\x9d\x9e\xdfbj\xefi4>\x8e\xd0\xc4uq]y{_t\x02FuO$e\xa73\x9b\xd5\x19\x16\xbe\xb6f\xd0_\x9f\x00\xcd\xa4\x0e=\xa2\xa96R\x0b\xd3\xc0i\x9ag\x0c\xc0s\xb8\xba\r\xb3Y\xc4\xd2Jl\x84>\x04gO\n\xad\x97\x96`n9\xbfg\x7f\xf2\xe3\x16\x94d\xa2#\xcc<\xf7\x19\xacG;#\xa1\xa1\x85\xe5\x10\x8a>TjV&\x97\xe4A\x1e\xc0\x0f\x9c\xb5O\x9c^"\x1c\xd3NYp\x19\xc8\x92\x0c\\\xf0\x7f\'\xbe\x15\x1b6\x12\xdc\xa7\x0c\x7fz\x12\x9e\x7f\xe6\x88\xad(^;\xaf"j\xc9G\xfb\xfdyT\x17\xf4=\x89k\x1e\x86\x83\xbaW\x07\x8c"\xe0\xdbs`7t\x12\xb7\x83\xb0\x86~\x16DH0\xc2\x16\xb3\xe3~K;\xbbY.Z\xe3\xadN\x16?\x98V\x04\x1f|\xber)O\xe6:O^\n\x1bM@5\xb2\xaa\n,\x1f>x\xe3\xeakr\xa4>\x920\xe9\xaa@\xe4/\x0f\x12U\xadb\x14/\xe59F\x96\xab\xf8\xd2?\xfb\xe4\xc1\xc9b\x99\x14M\xc8\xaf\xd2\xb5"\x02\xcd^\x12\xdd]\r\xd2?SI]U\x02b\x82\x7f79d\x86p\x95\xd8\x7ft\xd55\xfc\xc9\x80\x18]gL\xc3\xf0\xe7\xe8\xc1\x9d=\xc5\x1f.\x10|\xd5\xe6\x1a\x04\x99|w\xae\xa5cb\xe1Hb\xd0\xce\x117\xa20Z\xdd\xe7\x19\x19\r\xc2\xb9\xbb\xf6\x07\'T&>\x1c0\xaa\xfa\x88\x9d\xf9\xc4\xbe[\xad\x13F\xf3\xa2\xb1\xb5\xd1\xaf\xc5j(u\xaf\xb3\xea\xe8@Uc\xc0\xf1.\xf5\xde\x05\xdf\x12#\x1a\x02\x91\xcf9\xa2\x01\x15\xc8\xc3B\xe0\xeb*7g\xc4Q{\x01\xa5\xab\x0f\xb3\xf2g\xcdFux\x17\x02\xbe+\xa8d\x12R\xb3\x7fp\x7f\xd1l6\xd8j\x0b\xe0\xb5\x85\xde\xe8\xb8[\xac\x8f\'kZw\xdb\xab\xf0\xc4U\x95t2\xba\xd0\xb5l9\xce\xef{\xd5\xd52\xfa"\xc1\x95\x06\xb6\x0e\xa7\x07kI\x99\xaa\xd9\x8ft\x8a$Bl|\x00\x83\xd5j\x13\x87~,%\x92\xdd\rR\x07\xe4Q\xe4>b\xb0\xafN\xcb(\xa8\xf9\x13\xed\x9b\x96\x86u\x06\xcb\x19\x80-~\x02\x91K\xfb\xc2\x9e\xfc\x1d\x13\xf8];b\xe2\x86\x8b\x96\xad\xdf\xe0\x19\xcb\xf52\xae)x\x11\xf6\xa8Y\xa3\xfd\xfeP\x07cs#Y\xaa\xbaqP\xec\xf4\x87\x81\xd1R\xb4&\x91\x95\xf9\xf0\r\xed>\xb1!;\x13\xd9VW\xca\xd7\x08R}\xb0\x90\xfe\xb9*\xbe\x9f\xd0\xda&\'k\xbf\xbbp)q\xe6\xd6:\xe9\x99\xfb\xe8\'\r\x1f\x1a8\x0c+\x9c\xb3-\xe9`\x1c{l\xc0\x13\x08\xdf\x11\xf4\x18k\xba\xfcu\xda!\xe7\xe8\xe9o\xba\xbc\xe6m\x19\xac\xecM7\xe8%=\xcb\x17\x91\xb3O\t\xe0\n\x0e\x8d@:>\xaa{A\xd7\xbd\xe0\x10A\xa4F\xe1]\xf8\r\xf6im3\xaf&\xbe\xfa)\x87][\xbc\x83\x1fT\xcc\x0b\x03w\xc3k\xf9\x82\xdf\rb\x89\\\x8b\xccI\x98\xfd\xfe\\[\x92\xc3\x85\xbc\xa5\x8d\xde\xf1}\xd1R\xfb\x9c\xd1\xae\xc2\xad+\xd2\xa6,f\xd0\xc6*,\xaao\xceg\x97\x19\x94T-\x882\xf1\xa9\x06\xf2#\xa4-\x83J2\xfd\x82c\xce4{\x03\xa0Q\xcd\x88"\xeb\xb6 U\xd7\x99\xc0?\x13\xf8\x82ga\x00\x11\xf8\x10=\xc0?\x98\xcb\xceA.\r\xadG\x10DbA\xcb9\xd4bL\xa9\xcc\x12~\x83\x92\x11\x0f\x0f(\x82e\xdc5\xae\xac\xaa:\x01\xe5\x19q\x00u\xb1\x0f\xdb\n\xa3\xa7\xb0Gj\x95^\x893\x0cKO,h\xf5\xde%\xd7\x9f/\xa0h\xaf\xb1\xa8W\x81h\xbdq\x913\x03,G\x98\xcf\xaf\xeam\xa8\xd1&\xa4\x13\xb2\x8d\x9f5\x95w\xb3\xb0\x16\xb5\x8d\xb0\xf0\x11\xa7\x98\x81\xcd\x804\x04\xcd\xad\x8bY|&!\x81\x1c\xeem\x03\n(0\xf0"\xd9\xfc\x8ed_\ny\xc3\xed>cR\xad\xa3\x9a\x93l:\x80\xff\xd0r\xc8\xa1\xda\x97qlN\x10oS^\xd2\xf3\xfbo\x90f\xed\xab\x94u\x01\x1d\xdc\xb7\xdb~R,\xa8\xfe\xa6\xd4q\x8d/\xa2U\xa4\xfa4O\xdf\xb0~\'\xffK\'\xe0\x9fY\x139J&\xce/(\xca\x9f\x8c\x14\xa4\xee\xc6\xa6E\x90\x81!\x88\xf91\x1e\x0e.S\xde/\xc2i\xad\xf9\xc5\xb0\xb6$w"\xda\x8aD\xf1H\xac\xe9 ~W\x14M;\xcd\xe9\xf7\x9f\xa8\xc8\x06uE\xae\x02b\xa8\xec\xb0\xae\x7fh\x14\x9e\x08#\xe1!\xdcU\xc9\xd6\xe5\x03\xe2\x00@\x90@\x12b>IgBp\xbc\xbfG\xe7\x8b\x90\x08\xc0m\x18\x05=\xbf\xcb\xe0\xb3\xa9\x1btG \xb0\xba\xe5\xb7\xf9\xc3\xd7\x1c\xd2$\xad\xc9\xb3\xd5\x94o\xe7\xfc\x047\x0e\xe6\x13%Td\x8e\x83\x01\xf5\x18\xc8(\x93\xd0\xf9*He9]\x8b\xd4\xf8\t\x94\xec7\xbf\xe7\x11G\x1bm,}\x10\xdc\xeaL\xbe\xcb\xd8\x86u\xf9^\xa1\xe7\xbb\x06M_W\xfa#\x9d\x1b\xaa\xe7\xd8\xde\xff\xa6\x05\x0f^\xfd\xce\xb8\x10\xcf\xd3e\xb7\xa4}\xc8c\xbf\xcb\x9a\x9eW/\x8e\xd1\x00\xa4\xd3\x0c\xae1\xfa!"U\x90\x9dM\x12}h\x8b\x10Fs\xc3\xd9\xfc\x18\x7f\x96\xf1\xcf\xac\xa0\x84\xeb4\xfd\xa1\xb1a\x12\xae\x06\xb5\xdd\x17\xb7\x00\x1b\x14y\x1cF\x03\x92\xfe\x83vz\x9c\xd9;\xd4D\x83\xcb\x04\x1e\xdc\xd8\x14U\xb9qe\x13\x1c\xe3\xfd_\x07\xc1\x8f\xdb\xfdU\t _\x11\x08>9\xcc\xf1\xcbQ=\x1f;\x8d\xed\xb5\xd4\n\xa2\x99\x91\xd5\xed\xe6\x0e\xa3\x83\xd7\xfd0\xa5\x89\xfc&\xe8\xed\xc4\t\xd9H\xb4xgs\xa4S\x14\xd6\xb6\xe6\xdc\x8e=\x15\x84\x01\xfe\x8c\xf2|\xd7\xa6\xde\x15\xb3\xa8\xa85\xc5\xa1\x9c\xdeN\xff\xee\xe6\x01\xfb\x00aJ\x87\x8b\xa0\xa2\x95a\xdd\xa6\xa2o[\xe8E\x8d\xcc\xfa\x92\x86i|3\x9f\x1d\xec\x82\xf4M\xad\x17M\xc2\x17XE)\xd6\x97\xd9%\xc1mcj0*\xb1\xb5\x90\xdadi\x96\xa7\xcf\xe4\x1d\xe8\xa3!^2\x98\x9b \x13\xb8\x17\xc6\xa3\x0el\xc0\xe0\x1de\x93\'\xdb%\xdd\xb4\xb0\x0b@\xff\x1d\xfe\x83\xf1\x97\xe3\xf7z?\xa3{\xbc\x987\xdeR\xa6\x81\xa4Q\xd4\xb8\xd5[\x82?\xf1;\xe5R\xd4\ns\x0e\xab\xd0\xbe\xbc\x87\xee*\xe3\xd5\xd4\xa41\xf0&\x97v\x1anBU\xe7n\x19\x12\xff<#\x8ay\xc2\xae\xde\xc0x\x08=\x8f,\x88b\xa3\x07\xa2\x83\t\xae\xaf\x86\x13\xb0\xcc\xc8*\x843\xe6<3j?\x10\x1b\xbb\xffc\xe7\xc2p\xe9\xfc\x17{y\xa0\xda\xcfHV\xa4T"2\xaf\x02\x127\x1aO\x9b\xd3W\xe0\x9dv\xc5\x07U\xc3\x8c&\xa2G\xa2\xde\xb1\xa3T\x98\xa7\x97Ap\xea\xe6@\x87\xe6c\x08\xd8|\x03Z\x9f\xc06\xb1\x01\x85\xda\x8a\xac\xca\xd7X2\xc9.l\x831\xf8\xd3\xca\xe4\x1a\xca\xbb\xe6~D;Le\xff\xb57\x07\\\t<\xb0\xda<7B\xb8\x82f;\x93\xb6x\xed\tQ-\xe7\xb7\x8b\xf0\xab\xb1m\xb6\xc4\x97\xd7#\xcd\xc1\x1c6\xe5)\xaetE\x90\xe4O\x9bq\x062(\xe9J\xb8e\xf47\x99\xce\x81\x13y\xaa\x04\r\xe3G\x18\x9e\xe2\x1ct\x8b\x163de\x07J\xff\xba/h\xe3\xa3 @!\t\xb0\xfbw\xb9\xf7\x83\x8c\xef\xaa\xed\x81\xcd*\xb4uI\xa6:\x86\xed\xeezNJ\xda\x13\xdc\xaf\xfcq\xc4\x1fB\x08\xdeL\xf5\xb9;\x92\x8b\xaf(\xeb\xae\xa1\x05\xba\xab\x9aK\xc6`\xb1\xa8B\x828<R\x0e)J\xab_/p\xc1\xa4=\xe3\x17.\x880\nf0\xa4\xd2m\xc96)\x11\xbb\x9e\x85\xee$\xd2gi\x0b\xef\'Q\x1c(%\ri\xa7\xc3\x18H\x0fWJ\x0fG\xa6\\\xfb.:*\xba\xe5F\xe6\xe3\x96\xf2\xa0C\xe2\xf2y\xceT\x8c*3\x9a\x84\xe7\xa1q.3\x8f\xd8\xe2\xa9\x88|\x9a\xb9\xab\xc2!\xb4\x04\xe7\xe6\x7f\xe3\xdd\x95\x19\xab\x9b\xb1h\xe9\xf1\xdd\xf9\xfb\xdb\xd8\xfc)?\x11I\xe2\x0f,l\xc9\xc8\xc2C\x97\xdc\x1f\xdc\x1eb$\xc9X\xb2\x1e\xd2\xf4\xe7hd\x93\xf2\xbe$s\xc1\xaa\xe4\x9d\xdd\x1e\xf92\xa4\x93\xee\x8f\xa7\x9cR_\xa9 \x02\xfa\xe9\xc3*\x8a9Il\x17\x9f\x8d@\xa1W\xbci7\xbc\x19z\xd2\x11\xdd\xd9\xcf\xce)H\xc28lQ\xafc\xa6\x85\x9ch\x05P\x18\xaf\xf9\xd0\xe68\xec1@`\xb6m\xe9\x11Y\xc7\xd9\xef\xd1\x12<\x9f)\x19x=\xdb\x99b\xdf\xb7yLvs\x85\x03\x91\xd6\x07U\xdf\xa0\xdaV\x90\xcc\xc2RUzhl\xee\x99r\xe00\x00<\x10\x0f5\\\xe3\x95fre\xc9\xdb\xa9Z\xadn0\x95\xe5T\xc6\x90Lq\xc3\x11\x19\xd3\xf2\xf2\x11\xd8\x87Pl\xee\x8cD\xef\xd7\xe9&\xb5!~\x1c\xe8\xf5\x1d\xea\xb6\\\x15\x03r\xc5\xf8\xca\xf2\xa6J\x89\xb3}\x1b\x86%\x04\x03\xba\xba\x99\x8b"\xe2\xbb\xce\xe0\xad\xce\t\r\x8f\r\xae\x04i\x92\x87z\x80\xd0\xecP\x92\xe2\xc5:\x9e\xaa\xe6K\xeaK\x88o\xdc\x90r\xbf4\xd1\xdd\x08\x9f<\xcb\x85\x0e7\xc2\xd0\xe5\xd3\x0c\x85&\r5\x01\xc7{\xf1\xd9\xb7\xd8*`\xe1\xd0\xc5Jp\x93\xe9\xcdQ\xf0\xcfd?|Y\x98\x81sl\xc3x\x10\xcdU\x11\x84H\xe6\xceQ\x08\xfbOoG$X\xd0\x9d\xfc2\xc6\xe57\xb4\x94^&\xdbV8aH\x1b}\x01#\xb2\x17[-\x93me\x9d/\xd1\x89-\xe8\xbd\xef5:\xfc\xf3\x94\x11\xe5R\xfc\xd6\xa5\x16\x13\xf7\xb8\xe4\x93\xcd\xc7>\xcax]|&SU=\xddFF\x8ed\xd6\x02K\xf3\xbe\x9a\xc0\tnE\xcd+J(\x96G\x94B\xca\'Q\xdb`\xea\xf9\x88\xf3\\h\x0efG\x94T\x9e\xc3\x13\x0cS\x1e\x97\xc5\xbc\x86\xa1\xd6>.\xc5c#\x95G\x9a\n;E\r\x91\xab\xafN\x90\xbd\xbeR \xe5\xc9\xc2\xf8\xf5\x85\xdb\xa4vX\x04\xe0<\xa6\xbd\xb2\xf6=\xb4\x81\x8d\xe8N>\x83\xb7\x12|\xaa\x8b\xdfGg\x1d\xd0\x0eMv.[\xbd\xed\x98\xfa\xd9\x1dIn\xd7\x178\x9f\xf9\x0f\xe3\xea&\xc8\x9b3}\x1cT\x06-\xedl\xe5\x80[\xf9\x02\xaf\x1e\x9cw\xee8\x16\xbf\xdd\x1c\xd0\xd3\xe8\xf3J\xc7\x01\x9d<Y\xa5\xef1\x00Q\x17*a\x8di\xcfI!\x84su\x97\xff\xfdKc\x12F\x9a;\xed[\xf0\x1fjX\x94\xe3~\x19\xd8\'\x85\x8e\x84\x85b9M\xe5\x10\x96\x12\x11\xf2.\xe6\xec,\xb2\xb1g\xd8Pr\xb9\x9c^f\xacz\x13\xd2@s\x1f\xcf\xfeT\xa0\xba\xb1]\xabd\xaa9\xc4(f\xad\xfb\xf6h\xaf\xb7 $\xf74\x16\xc4\xbb\\B\xffQ\x8d&Zk\xcek\x07\'\xd3\xcf*c\xdc\xb1\xc6Ip\xed\x9f\x8bw\xf3\xac\x04\x19\xed\xf5j\x80\x16\xf1>RA\xd7x\xc8*@\xaa\x17\xe6\x8b}+\xc7Jy\xc2\xb8\xec\x90\'Aa\xc0\r\x84[E\x1cR\x96\x17\x14O\xa4T!~\x9c4\xd0Wfc\xd1\xf4\xf2\xa8T-\xab\xb4h\xd4\x07Zn\xc3C\xbf\xa5-(\xb0`j\x8d\x1cc~p\x12\xab\x85\xc6\xc1\x12\\\xd3\xa1\xa7gD&Ep\xf8\xb2\xe1\x17}\xfa\xef\xca\xc0\x08\x0b,\xde\xacmH\x00{\xc5k<;\xb0e\xe8B\x13\x9d\xe2\x8fK\x86\x0b\x08\x12\x1a\x7f\xd2\x07>(1\x06\xa1[bU\xa4\xb9%\x1e\xab8\xde\xed\x8c\xc8\x0cwce\xa1\x8e2\xd1|m\xf9DT\x99B2\x10\xcc\xdd\xf1\t\x82\xc1a\x0e\xadz\xf9\xfb\xab\xc2\xf8\xaf!\xc09\xd9w\xbd,A\xbd\xa6\xf1 \x0f\x165\x1f\x8fbs\x7fNu\x05%\xdf\xa6\xe4\x92\xabyh{\x02\x87\xc9\xee\xe0f\x93\xfb\x92\x9f.t\x7f|\xf7/w^\x9c\xed\xcc\x92q!oJp\xf3\xca\xae\xdfYaYH\xbcc\x02,5\x93\xba@\x88\xb3\xe9 \xfb\xe9\x19\xed>((X\x11\xab0\xe1d \t\x9dh\x0cE\xd2\xef\t:O\xcb\xb6\xea\xee\xe6f\x18\xe2\xac\xff\xbc\xa3\x9c*K\xcb\xf7\xedqP$\xe6n\x1c\xf2\xb0\xdfI\x15d:\x93\xe8\xe5 \x1b\x1b<\x89\x95\x1f\xf3&]\xd2\xec\x89\\%\xe6\xdf4\xbe\xb3\xf9\xfd_>@\xdb0\x87ly\x08\xf6\x99\t\xd0\x92\x9e\n\x84Q\\<\x91\xd9\xa6\x12\x1d&\x08\xca\xa4}\x82h\xbe\x85\xe8\xaa\xa7\x16\xc6\x83\x83f\xc8\x13\xddb5\xe5\x11\xd071\x04\x97\x95f05\xb7\x86\xb9\xb5c\xc1\x96\x05\x9ao\x9b\x0b8\x96\x16\xc6\x18\xc3&\xd9\xbe\xf4h\xd4}\x12\xc5+\x8bdq\xd7\xa2\xb5\xcc\xb3\x1c\xb9\x9b\xc3h=s\xfc\xdd\x97=O\x07\xf2\x17\xf1L\x0e%S\x83\x86A\xc6\x94Y=\x12\x88\xf3\xd7Z\x00L\x0c\xa6\xb1;b\x0e\x19n\x12S\xb3\x16\xef\xe7\xc7\x82\xbc\x1f\xda\xe2\x15Y\x02\xc3\x87_%\xeaTr\'\xe4\x83\x9e\xe6\x8f\xa8\xe9I\xe8\xaeO\xf5@ox#"\xbf\x8b\x9as:\xe4\xfb\x07\xd1\xf48\x7fSu\xa7\x14\x00\xc5m\x801E\x1a\xba\xb7\xc5G7\xe0\xcd\xbc{\xe6\x8d(\xaf\x91V\xfcu\xa1yx\xa0:\x12\x08\xe7\xa5\xf7\x08\x98;3s\x14D\x14\x92JG\xbb)2\xb2\xd9\xea\xe2\xb5\xa5\xbe\xe1\xeb\xa9\xca\x82\xf8\xef;x\xdaLI+o\xd67\xa5+$\xba\x0f\xadj\xdf?I\x7f\xa3S\x13\xd9\xa8\xd3z\xdaOi"(V)\xc2\xd0\xabS\xd3\x90\x03\x0e\xea\x0eS\xe8\xa9\x92\x04\x8b\xfe\x9ep\x9d\x10+N\x00\x17\x95c\xf8%90\x0b:[\x9dT\xc5\x87\x0cK\x1er!"r\xec\xcdn-\xd8Go\xd9]\x82\x84E4?s\xcf\x10\xf0\xfa\xefJ\x86\xf6\xc8s\xbc\xfa\xcf\r\xa3/\x91\xbfrG\xc9\x02\x92\x95\x8dh7\x99O\xe1\xb6M\xd1\x90\xff\x8e\x82\x89\xe8\xca\x1b0\x1b\xe1F@\x93\xdds\xfb\xbb\x83]\xe1t(\xc4\\w\x81\x02\xd8\x8aQ\x82ar\xf26D |\t\xc9\xb2\x82\xd0\x87:9\xd1\x03\xe78*\xb22\x01\xb2\xa4\x83B\xec\xa1u\x15\x971\xaf\xceB\xef\xd5b\xfd\r\x93\x1e\xf8khGW\xc9\xd2\x94\xefn-\x0b\x95\x04\xee\x9f+\xae\x08\x04\x86g\xa1\xaf\xae\x1b(\x94\xa9$FJ[\xf6\x8f\x99\x84h\x0c\x94\x85L\r]\xd9-u\xf8\\\x97E\x1b\x9a\\\xc6\xe1(\xa7\x0f\xf4\xfe\x96\xa6p]d\xf8\xd1\xc9f\xaa\n*\xc5w\xb5\x0c\xff\x01\xf1-M\xbc\x97P6Uv\x9cYd&R\x83_\xc3\x1f\xcbn\x0f4a?\xf8f\xe2KC\x86\x9f\x858\x163\x07u\xf7\xa0^Q*\xc6\x94\x98\xba\r\x8f2\x18\x83\x87\x98a\xdf6pC|b:\xdb\x84\xc60z\x88\x91\xdeK\xf1\xc6\x07(8\n\xcf\x8a\x95\x88\x07\xbf\xfc\xac\x062\x18\x8b\'\xc5o\xa8\xd9\xcc3\x0e>>\xa3+fL\x9d\xa0\x9d5_hk\x14]\x00\x95b\x99\xe0\xca\xff_\xb0\xc3g\xa1\x85\x91\xa4\x8c\xe8\xe0q\xc0\xd6`\x7fx\xabF[\xa3\x10-\x03\xfcU\x1b\xed\xa0\x17A\t2.\xc1,\xb7C\x0ct}wAi\xc5\x95\x00\x9c\x95\xe7\xb7\xa5(\xc7l\xf8\x87JPUP"""
+salt = b'\xcet8\x18F\x9f\x054K\x0f\x10Lv\xd7P\x97v=TQp\xa0\xac\x92\xdf\x0f!\xba?\x96V\x86\xe5\xed\xeb\x13\xa0\xfb:g\xdb%\xeeg\xa3\x12\xfb\xd1\xdb\xa7\xb8\xa7\xcd\xb9ctc\x8be\xaf\xc9\xb6\x11\x16\xab\xc8\xb6\x94\xcb\x19l\x87\x89\x04\xf6w%z4\xe3N\x8f\xf63C\x8dW\xbb\xd9\xf5\x88\xdc\xfd,6U,4\xc1}\x1a\x03\xa1\xee\xac\x97`B\x03\xfd\xfbRQ\xbb\x14\r\xf7/U\xa7\xba~\xd0D\xde&g,\xeeD\x1a$fQ=\xd9\xd4.\xa7\xcaB\xd0\xfaB\xdc~\xcd\x1cA\xf1\xc3\xeb,\x130\x8f\x91\x9ei\xbd\x94\x929O{\xc3\xe81\xe0\x01g\xc3Z\xd6K\x81R\x8b\xd7\xb5\xda\r\xf6G\n\xaa\xabW\xe0\x1c\x97\xcc0m\xfa\x8c\xdez=d\x0e|\xca\xba\xc8\xac\xe8\xf4\xc6\xaf\x8d\xf5\x06R\xd0\x1c_N\xb1\xe8\xa6\xd0\x1a\xde\xf7\xf1.\xe9\x9f(Nc\xf0Q\xc7\x14\xaft\x1c\xb7\n\x84\'\xe9>v\xd0I?\x8d\xa3oIr\xad{\xa1\xdbx\xa1v#&\xaa\xf0\xc4f0\xfe!\x89\xc2x\xcb7\x03\xb9I\xc7\t,\xa1\xa0\xc0w\xd7\x7f4p.r\x94#:\xd6\t#\x95\x8e\xd2\xc7\x04U\xaa\xdcLm\xbbJ\xf1f\xd8\x88/\xfa\xd9k\xfe\xe7\x11w\xba\xc1\x10\xa0\xdd\x16\x06wu\x12\x94W\xa3Umh\xa1@%r\r\x80\x83\xe7*\xa8Y=\x01\xcb|*\tT\xec\x87\x82\x07\xf0\x1e\xe5\xd7\xbd\x95\xe8v\xcb\x9ef\xb0\x7f\xb9MI\xfa\xedn\xf0gI\xae&\n\x92Q\x8a\xbc\xa9#U\xfe|\xff[\x003x\xfaz)5pt~\xd1"\x81\xb2\xb0l\x1e\xa2{\xbd\xbe\xe9\x99\xac\xec.N\xb22G\xc0\xfd~\xc7\'\xe4\xfbl\xb3@\xcfm\xcc\x82\x11\xd9\x90\x00uJ\xc6\xb1!u\xf2i\x95h\xfb\x0f\xf3\x04\x08\xf6I\xfeb\x15\xdb3\xfc\x8e\x89a\x98uZ\x98\x1d\x15Y\x9b\xf3\xb7A|(\xb7\xae\x1b6\xed\xf9\xbc\x96rLh\xdaM\xb8\xcc\xa8\xefUY\x1a*T:\x05\xfd\x83W\x9a\xd0\x1ek\xb0\x93\xc7\xa9\x05\xf5\xf8\x8b\xa8N\x02\xd0\xc6b\x13=Z\x11\x0b\xccl{?\x86\xael\xe8\xa1Mg\x11;+\x80\x13x{\xd2\x0cS\xce#\xa2JLZ\x11zEF\xd5B<Z\x1dn\x81\xdf\xc6\x1f\xa23J\xfbXU\x18\xa2\xc6\x83^\xd4\xe0\rry\x1d\xe7\xa3\x97%\x84\xecO\xf6\xce/J\x8e\x99DU|G%\x8f\xc9\x8d\xd8\xb6%\xf0^\xe2\x87\xef\x15I\xde\xebiI^\xdb\t\xdf\xf3sE\xd6\x9bTu\x95\x1a\xa89\xb4\xa9\xc9x\xdbQT\xe1}\x7f>h\x91^K\x7f\xdcb\xea`\x1f\x14\xfe\xc4\xd7d\x98\xbe\x81L\x92GP\xa56\x1c\x01\xe6\xf6\xf1\xee\x04\xe2\xba(u\xda!\x90\xc7]\xdd\x9d@~\xaa\xbb\x93T\xde\x12B\xc7\x18\t\xfaaU.\x9bIR\xe0\x89\x18e\xe3c\xc1\x9f\xde\x01\xe0J\xfa?D\xfa\xa1\xcb\xc1\x9b\x95\xb6\x05\x10\xf6\x06A\xd1\xdad\x99\xdcr\xef\xdfG\x7f\xf0\xa1\xc6\x04H\xac"\x15\x1f\xde\xc4\\\xa4\xfcn\x10\xce\x0e&\xd5\xe0\x9aA)\x824\xf8\xa0\x8b)_\x11l\xd6\xb2\xb4:\x9ae\xd5mA\xc4\xc8\x87\xbf\xbc\xeb\xb9\x92$\xa1\xa8\xb8sio\xdd\x05\xd9Q\xfd\x07\x8a\xe9LO\xa4\xfdQ0\x17\xae\x9a\xea\xf8!g?\xfa\xf4\xd8\xeb\x9e:Z@\xda\xe1\xa1\x0e\x98\x8af\x17a\xa1\xec\x95\x14\x02e\x98\xbf\xf4m\xf7c\xb2}\xae\x16\xe7\r\x96 *\xa2\xa8\xa9r\xf5\xaf\x02\xcbY+{J\xcch\xfc\xee\x07\xa9\xd6F\'\xfb\xdc~\xbf\xe4k\xf3\xa34O\xb1\xca\xd8\xec4t\xd1\xf1\xbb\xaa*u\t\xf5\x9eh\xf3W\xaf\xf0*\x03\xf4\xd7b"y\xca\x9f\xf3\xea\x01\x91\xf4\rM()\xadj\x1bH\xf0\x08\xe0J\x91\xe6H\x99\x0eV\t\xf2!\xddS"({sp\xbd\xb5\x18J5\x9d\xd5\x07X\x0bZ\x82?\x147wS\x87\x1f?\xee\xd3\x8fB\xdd\x9c\xca\x15p\x08S\xe1}\xd3l=\xdc\xa5I\xed\xe2rJ|\xa9\xfc\x80\x02\xfbWn<X\x87[\xce\xd8\xda\x9fA\xf0\x8b\xe7\x02\xba\x9dTN\xc4\x97C\xe2h\x17\x9f\xc3\x1d\x8f\x95\xb96H\\pe\xb4\x83\xe6M\xb7\xa4\xe1\x05\xbb\x0c\xa1\x98\xd4P@\xcb\xd3\x0c$\x80\x9c\x0b,\x1b\xcbK"\xb6O\x91\x81Qb\x8c\xb1\xf4W\xbb\xd0\xf1\xe3\x86`\t\']\x8ad$CVl\xd0T\x9a\xbc5\xf4\xf2j\x81\x9fSXi\xec\xf2k,0\xd4\xe9\xce\xb5\x87\x8e\x8c\xa2\x97E\x87$$D[\x9f\x1a\x88ci\xfc=\x7f2 \xca,\x0e\x12\'\xb9\xd5\x02\x90u\x03\x15\x85C\xcbrs\x11\x00\x07\xfcw\xeb\xa9\x9e\xa2\xca\xafg\xc1}\xa0%\xf2 m%+\xce\xe3\xdb\x028R\x87\xbe\x9aA\x805\xc75\x01\xa8\xc2\xfe\xeb\xa3\xd6\t*\x1d\xd2\xac\xed\xe3\x8f\xa3t\xd1<\xa8\x8d\x11\xa4\n\x92\x19IW\n\xe6H\xb5\xe0\xd8 r\x96\xa1\xd5\xe8\xe0\xf2\xf2\xac\x01<*\x07#\xd4\x95\x1d\x0e\xcb,\x04U<\x95\xb9\xc1b\x83m\xaf\xd71\x98?*\x01\xfaZ\xf84\x94\xa5\xa5\x83gk\xc9\x9c\x06\x8ft7\x99\xdf* n\xb2\x9c+\xf8@\xd7\xe3\x90\xc7\xa8z\xa3\x86F\xfed2\xd3\x17\xc8\xb2\xff\xd8P"j\x903\xa8/\x91\x16\r,I;\x80\xf3F\xa8\xa3%\x9c.\xf8uF=\xd4\x07\x93\xa1\xa4\x86\xe4\x90>\xe0\xaa/w\x0e\xae\xbet\xd7\xe5\xc2\xb1\x07>\x12\xde\xf5\xac\xb7\x0f\xf9af\x06\xaa\xc0\x7fE\xc4\xd0\x121\xa0\xbf\x8dA\x18\xe1\xf1\x9f\x8f[\xcb\xe0\xb27\xc3\xe8A`\x97\xf1\xc4\xb4T\x9e\xb7a\x97\x7f\x1f\x1b\xc8\xba\x8c\xc0:\x90\xf150\xd83\xaf\x04K\xf7\x84\x17\xaf\xf4\x15\x0f\xda\xcdE\xfe\xb1duU`\x94\xf6\x8b\x90TP\rQ}\xe0\x99<\xd1\xec\xfb\xad\x9f\x06\xaap\x1aft\x9b^\x14\x1c\x83\xff\x1c\xd5g\xd4\xcdl\xe0\xe4j\xba\xf0\xd2(\x07\xe1\xd0\xf9rZL\xebAKQ1\xa8%\xcd\xe9i\xcf\xe7\xcc\xaa\xac\x04\x8e)Hit\x08\xb9"(\x01\x95\x96\xb1(2\xe6\xb4\xde>\x89i\xf6\xc5\x94W\x06Q\xcbQ\xdc\xa1\x8d\x9a\x02\x00^\x86<\xbd\x8e\xd1\xd5\xc2\xbd\xbf\xe8\x93\xb4\x85\xd4l:\xd2\xca\x11 K?\x95+\xdaF>\x1e\x04pS3\x9d\xde\x81VD{\x85\xd7\x9a\t\x1a\ti\xdeR\xce\xb4\xd0\xec_\xd3\xdfW\'m\x1b2-5\xea\xab\x0f\x99\xf0\x96\x1b\xcf\x7fQn\xeeo\x84\x92\xba\xe8(\xa4h\xcbM\xb5\xe4C\x80`\x10\xfc\x9b"N.\x00\x93\xf1\x1e\xdfse\x88\x18\x0f\xdc\x9f\xef\x7f\x88UH\'6y\xab\x90\x01\xbd\x17[\xd6x\x7f\xf4\x1cXZ\xe2\xc699\xcc \x11\xe1O\x8dhdIM\xc9\x8aK\x82\xa2t_\xba\x18\xb2\n\xef\x96H\xa6\xc2\x08Cp\x1fO\xfe=8m\xdd7\x1ci\xfc\x1a\x11[#(\t\x11\xd8\xd3\xd0\xad\xc7K\x11\x91\xf8\xeb!:L\x01\x8c\xb1_\x82\x91\xcd4W\x841E\xa2\xa6j"\xbc\xeb\xd3\xc3\x94\x11\x9bZ\xd1\xbc\xc8Q\x05\xb0Z\x1eT\x92^\xbb\r&\xc7\xe3~\xa9\xa9g2\xa5\xf3\x02\xd2\x9c\x9fc\x87\xf6s\xb2\x9da\xa0W\xf9L\xa0\x86\x98v\xaf\x96\xba\x8d\xe4D\\\x87\xdc\xc5\t\xdf\x90z\x87\x9aH\xd4\xa2v\xb3\x17\x95\t\x86\x15W\xf5j{\xd9\xa3\xba\x1e\x97\x85\x85\xd1\xc0\xe85\x87\xf19?,\x1aS\xb7,\x80l\xbd\xa3\xff\x1a\x03\xe5\xaaQ*\xb9\x88\x8f\xa6\x11\x9e\xe2\x9a\xf9\xb8\x1b\xce\xe4\xfa\xbc\xa5\xe2Fe\x0by\xaa\x0e\xf4\xbd\x00h~m$7\r\xbd\xab\xafsm\xd1\xa2U\x1eZ\xd5rJ\xf0Q\x12\nI\xee\x07^\xd6U\xa3\tz$S\x82\xcb\x9d\xe6\x9f\xa3\x8c8S\xd6\x98]Hk^\x81\xd3\x1e\xcd\xee-C\x02\x99\x03<\xa6\x87\xf2r\xe5\x87?\xdf\xe0\xc7\x9bL\x7f$\x0f\xa5\xcck\xaf2\x08@D\x1a\x85/\x98\x1b\xf2\x89\xb4E\xc8T\x18lc\xa8Q\xcb\xd5p\xb2\xe4\x81"-\xd9\x10\x1c\\\xf6z\xf3\xa4\xaa\x88\xe9\x9e\n"\x13\x96!\x8f\xed\x1e\xa6\x9a=\x97\xab\xb8\x7f\x89cic\xf1\xc2\x0c>7Ny\xd4\n\x9e\x818O\xeb\x8f\xfd\xd3\x8d`HJ\xf2#\n\xc1\xdf\x8a\xc9;\xb6x\xd9\xfd/Jr\xbdL\xb6\xeaK\xb1\x84\xe2\xc6\xea\xf5]\x17\\;\x91N\xa1\xe3\xb0?\xa9\xc1N\x1c|\xd6\x14\xbdC\xa4\xc9\x84\x03|{Ko\x8d\\)*|\xda3x:0Jv\xc0\x93\xf6\xef.g\xb0Np\x1f\xfa~\xea\xee\xdeD\x19#\xc4O\x84\x81Z\x0c\n1\xa7\xe7K\x89(N\x9d\x9a\xad\xd9\x05\xbb\r\'\nOw[\xde\xfc\xbck7Da\rh\x9aX+\xbeq\xbf\xf8_\xa2\xef\xd2\xe2K\xcf\xc3!\xc5\x94\n\xad\xd9\x9d\x93\x16\xfb\xd2\xd2\x95\xec\xb3\xbdFa\xa6v\xcaZ\xed\x85@\x8e\xd1.DAw\xdd~\xaf\x80\xda\xe9\xc2\x81i\x80\n\xc4\x0e\xf6\xd6{\x17\xf6\xca?\x0cBhB\x97\x81o-\x0e\xbe&\xf0\xbc$$?9\x9e\xe6{dpZ}\x16)b\xfah\t\xce\xcb\x80\x8e\x85g\xd2\x89\xd1.,H\x03kh\xc1\xb9\xb7\xe0H\xf1\x1c;\x80o\x9a\xf9\xd5\x8e\xcb!^\x99f\xa5Dt9K0Q\xcbzP\x82F2P\x81i\x10\\LJLo\x0c\xda\xf2t\xf1@z\x8e\x00\xf6\x0e,\x0b\xe5s\x93^\xcaN\x10P\x08\xa2,f,\x8a\xe0Go-#@lg\x01\xbc\xecH[\xe5\xb2C\xd6p\xb3\x93\x9a\x93\xce\x93\xab\xcd)a~\xf9\xf4\x1e8\xc8\x00\xabc\xf8o0\xa2L\x8f[\x7f=\x00\xe1w1^\x89\xba\xb8IM\xc6]\r\x82\x83\xa1\xe3\xf7\x88G\'`\xd0\xf9Z+\xefd\x12\xee\xff\x1b0\xd2\x1a\xf3-\xdeO!\xfc\xe2u\xbd\xa7)\xea\xb5\x97xi\xd9`\x1e\xed\x932)\xd6\x02\x86\x83h@C\xf9ka$3-c\x83\x00\xfa\xa5d\xf9\xf0\xca,?\x00\xd7\x98O\xf7\xc2\xae\xc0\xb2\x0cO\t\x8d\x9c\x05\xd8\x96U\x95raq\xc2\xd5w|\xf5\xc4D\x13A\x95\x11\x93\xec\x13\xa28\x0cg\x1f\x14\t\xa0v\xf5@\xcb\x8bq`\xf2\xab\x1b>\x11\xbfr1\xb4\x15\x9af\x80\x97.\x00Q\xc9L\xa8\n\x8c\x114\x9dS\xc3\x9b7\xd4\x8e\x94!\xaa\xfbn\xad\xb6pi\xbfk$\xa6\xb3,\xcf\x15`\xdb\tz\n\x93\x89\xe0\xcf\xf7\xdc\xbb\xa9{\xbd\xc3}F\xd2\x93\xeb\xc5\x9d\xe8zgB\xc2\xeeU\xf7\xac\xd5\x10sV2\xa8\xb9\xe3\xd3\x8a\xa7\x8e\xd8\xa6#\xbc0?\x16\xcc\x9d{\xff\x16\x18#\xe1+\xb5\xde\xa1w\xe0\xa1\xdf\xfcU\x12\xae\x1c\x8c\xc4\xe1\x87p-Tjk\xd6\x9d\xe4\x0cK\x1c[*\x1eM\x81.c\x031{\x05\x82KW\xda\xf3\xaf6\'\xa2\xf1\xe9\xf6\x92"\xfe\xb21M=oKN6I\x8b\xd7\xaf\n&\xe3\xeau9d\x88X\xb70\xaen\xa8e\xb1\x0f\x1e\xe9\xaf\xcc1N&$V-\x86\xaf\x17\x10d\xc8!\x05.(l\xe1{\x88\x8f\xaeH\x82\xed\xcc\xa2s\xa0\x8b\x9e\x8f4\x88\xc0}\xc3\xbe\x1b\x00\xee_\xcf\x1a\xc6\x1a?\xae\xf7\xf3kQ\xd9Z-P\xb6\x01\xf7\x021&\x10\x84\xce\xaf4\xfd\xac\x9cQ\x03\xc3\x8fj4\xc4\xbf.\xf9\x89>\x05\x03 :\x00#2b\xdc\xc8e\xdbQe?\xbdd\xfd\xc6\xec\x97k_\x1c|\x16C\x9b\x1b\xe4\xaa\xc5c\xe93}i\xd0\xcc\xbe\x8c%^\x0f1\xe7\xb2\xb6\x8c\x90\xb1\x1b0q\t\xea>\xb1X\xa7w]6\x91\x13V\x91\xb1\xe8X\xc2\xdf\x9e7\xcc\xddD\xa1\xa2\xe7\xe8\xd0\x15\xc7E\xad\x88\xc3\x81\xbfWO\x83\x80X\x16\x123S\x93\x10a\xba-\t\x94\x08/\xd93\xa5\xb5\x11\xb8*9u\x86\x9d\xf6o\xbd_\x19\x17\x07{3\xd4\x08\x8b+\x91OQH\xb6\xc5\xfb\x06\xd3\xb4\xb8\xf0\x1cHI\xa1\x17\x16\xaf\xf4\xed\xed)\x9d\xaax\x8f\n#\xc0\x01\xb9\x83\xba\x8dQ\x13\x8d\x7f\x12\xf8\xe3\xf4C\xbc\x92\xce+,*\x90\x0bXR\xec\xed\x92\xe9n#\x84\xcc\xd7\xd7\x9e\x0ff)\x915\xc4\xd6\xdaF\xc6~\xb3d\x8d\xac\r\x98.\xa0\x8a\xe8g\xc6.U\x8c\x89\xe0B\xad?\xa4\x9f14R.\x85`\xf58\x97\xbd\xd4K=\xa3\xa1\xf53\x01\xc0=N8\x12\tdE\x0c\x9f\x12\x05G\x04\xd4\xc5\xf3&\xf0I\x00\t\xb15a\x8c8\xd7#\x89n\x91\x16o|\xbe\x87mX\xe2\x00\\M8\x06\xcag\xb5\x8c)L+\xd1\xd8\xfa\r\xb1M\x83\xe4N7\xb6\x1f\xeb\x08,\x0f\xdb\xc0\xc8\x96\xca\xf3\x85T\xaez\xb0[\xf9\x17|\xc7\xd7\xaf\x99\x8d\xd1^@\x89ta\x02\xa8C\x9e\xe2\xeb0\xdb\xf0l\x99\x1eyv\xc8\xbb\xbc\xe5\xc6\xa3\xbbH:\\/r>0\x8e\x0b\x82\xf6\xd3\xf0o\x92\xda\x00s7\xc6b\x82\xf1\x86\x94^\x87\x9e\xe0\xf8^=\x86\x02\xb0\x1bbJ\xa2\n1\xd0\xf2\xa9W\xb0E\xeb\xddq\xa3\xa0\x07\xa4\xf5\xeb\x94\x12\x9a\t\x07\xa1\x7f_{fc\xd1\xa0\xc3-\x8e\x92\xb6\xdf\xcdu\x0f\xed}\x13\xd9\x18\xef\xeb\x89\xfc9z+\x8e\xbaU\xad\x1e\xdc\x8a{\x81\xbb\xdc\x99N\x12&\xb5\x1c)\xdb\xe3\x0b\xe8\xfc\x87\xfemM\xd7\x7f\xfe\x04\x13\xb3\xa2BS\xd9QY\x85\xd64\xe7f\x1f\x8bb\xf6\xf0\xed\xabc\xbc-AJG\x9b\x02\xdd\xfc1a \xe0\xc0*\x0c\x1f\xb2\x8c\xee\x1f).X\xa1\x83/\xe2y\\\x84\xdd\xc4\xb5\xa51\xc4\x8b\x83\x9a,\x1f![\x15\nL\xe5\x02\xdf(\x87\x9d\xd0\xcdGm\x94\xb5\xd5\xb8\xd0\xd0\x15\xe0)\xda\xc8\xfb\xb4UAeJ\xa0\x9d\xc4\xf3E\xfb|H\xac\xe8A\x06\xf1\x13\xaeb\xd5/\x07\xc7{m\x0e\xeb\x13\x86\xf2vd)\x13\x80a\x13BWY\x1bXX\x96:\xe6\xba\xc5  \xa6\xb9\xeca\x8c\xc4\xc6\xd5\t\xc6R\x08[f\xfc*\xd4!gw!2\xa8\xbd\xdb\x7fW\xa5\x8dF\x0et\x17\x87\xb3<\xb5\x80\xd3\xe0\xa7i>\xe3U\xd59\x901\xf1\x89\x13\x9e\x06\xc7\x92\xb7\xf1\xfa\x98v\xb4\xad\x9d2\xf6\xb6q\xaep\x815)\xdb\x14=\xa4\xa36\xd9\xa7\x94_\xb7\xcf\xb3\xef\xd1Y\xe0\x06tQ\x1c\x18\x17Y\x1b\nv\xe0\xc8\xed\xa7C3G\x81#\x02vS\xcf\xa4\x90X\xabe\x1c\xf1\xc2q\xe8\x9f\x13\xe0\xd9\xba\x94l\x8c\xee>\xad\x90\\\x9d1^\x8aJ#\x12z\t\x90\xcc\xec|R\x82\n~\xd6\xef\xf1h4\xdb\xa2K\x05v\x05X\x02\x97\xa7\xbd\x19\xe1\xd5\xb9\x98\n-\xfb\x01/\xb1\x95\xf1\x88uI\xdc\xda#\xbd\xa2\x86\xe6\xefm\x99<\x88\x9aC`\xa7\xb5T\x16\x9b\x064\xd2\xb1\x17phF@mH\xf4\xf7H\xec\x81\x01Fa\t\xfe\xf4\xfdH\x16\xc4\xa9}\xed\x8b3\xe8\xe0&\x1a\xcef[\xf7\x95\xfb\x14;A{\xbcI\x8f\xad&\x97S\x00Qc,\xbe\xbd\xfc\xc1\xac\xa0\xaf@\xfb\x91\xcfo\xc0?O}\xf1\xddYM8\x91\x0eY\xd8$m\x88\xaf\xe2RM\xda\xfd\xda\xfa\xb6\xf6S\xca\xec\xa01\x01t\xee\xb8OB?\xa1e-\x1f\x7fS\t\xed\xe3(\x1b\xfb\x9f\n\xbf\xa8\x98\\\xb9KAAL5G\x96v*\xc9\xd9s\xea\xbcP\xa5\xdfA\xb3\xd0\xc8\x1a\xa0^\xc8M\xb3\xf7oW\x9d\x0b\xdb+\xca\xff\xbb\x94\xd3\xac<Z\x90U[5\xcb\xcbG\xc8\x17+FA\xb4Q\xd8\xbd\xeeb\xec\xf4;Z\x80d\xbb\xe6\xb8\x89\x19\\\xde\x8d\xe2\xfa0\x93\xcefX\xdb\xb9\xf4\xd2\xcc2\xa8\xa4"\xf6\xec\xf9\x9d\xd7k\x1d;\x1d\xcb\xfcJ \xee\xe0\xff\x8b\xc2I\xc1\x90gI\x95\xad\xc9\xcc\x16\xc1F\xaa\x85\xad\xb8rZ#\x8e\xaa\xf1.\x9f\x8bE\x95\xbd\x92`,[\xf44S\xb9\xb1\x18\x80\xd9\x82\xaaEA@\xdck\xbe\x1f\xdc\xf8\x0b|4mH\x9dP:\xf8\x16\xe4>R\xd3\xe5\x11\xe7\xec4\xec\x056p\xd1i\'pAdq\xa7\xaa!ta\xcc\xd0\xe0g`y\xabL9\xf9@\x14=\xc3T\xc6\x87\x94U\xa1\xe0jj\xb4\xbcW\xe1l\x81\xf2\xb0B\x98\xf2\\C\xe1\xf8\n\xac\xd3\xa1\x95\x83\xae\xd9K\xc6\xeb\xc0rx\x1b\x8bH\x9b\xd7\xcf\x9c\xbbI?\x99\x1eja\xbd\xf88\xdaE\xaa\xbe\xa1PA\x05\x8f\x92\xcb\xedI\x86\x1b(?\x89\x06\xac\x04IU|))\xe1\xa8\x8fw\x031\x97\xc0\xd2\xf1\x1ax\xaeN\xf8\xb90\xef.\xc3Q5R\xbbE\xde\xad\xbaH\x93#\xfba\xf6\xaex\xe1\xa4\xa0}R\x1fr\xecc\xd2\xa5\xce\xa9\\\xd1\xeb\xaa\xac\x03+\x94\x8c\xa3IoB\xd7'
 
 # Anzahl der Interationen für den Algorithmus:
-iterations = 10**6
-
+iterations = 10 ** 6
 
 # Algorithmus zum verschlüsseln:
 algorithm = hashes.SHA3_512()
+
+
+"""
+Bis hierhin
+</------------------------------------------------------------------
+"""
 
 
 # NICHT VERÄNDERN!
@@ -117,7 +185,6 @@ if isinstance(random_password, (list, tuple)):
 
 length = 32
 backend = default_backend()
-
 
 # Vorbereitungsfunktionen --------------------------------------------------------------------------------------------------------
 
@@ -298,8 +365,19 @@ def error(inp):
 
 
 def user_input(err, string=False, ja=False, nein=False, max_amount=False, min_amount=1, erlaubte_werte=None, random=False,
-               farben=False, matrix_nxm=False, ebene_darst=False):
-    """Gibt dem User die Möglichkeit bestimmte Eingaben zu nutzen."""
+               farben=False, matrix_nxm=False, ebene_darst=False, exit_after_time=timeout_time):
+    """
+    Gibt dem User die Möglichkeit bestimmte Eingaben zu nutzen.
+    exit_after_time in sekunden
+    """
+    # def kill_after_time(zeit, kill_event):
+    #     start_time = time.time()
+    #     while True:
+    #         if time.time() - start_time >= zeit:
+    #             kill_event.set()
+    #             sys.exit(0)
+    #         else:
+    #             time.sleep(sleep_time)
     err.error = True
 
     if not isinstance(erlaubte_werte, (list, tuple)):
@@ -309,7 +387,14 @@ def user_input(err, string=False, ja=False, nein=False, max_amount=False, min_am
         pass
 
     try:
-        inp = input("\n")
+        if exit_after_time is not False:
+            try:
+                inp = func_timeout(exit_after_time, input, ("\n",))
+            except FunctionTimedOut:
+                cprint("Zu lange keinen Input: Programm beendet", "red")
+                sys.exit(0)
+        else:
+            inp = input("\n")
         out = inp.lower()
         cls()
 
@@ -842,6 +927,8 @@ class Password:
             typ = []
         if isinstance(typ, str):
             typ = [typ]
+        if not isinstance(typ, (tuple, list)):
+            typ = list(typ)
 
         self.typ = typ
         self.name = str(name)
@@ -868,7 +955,7 @@ class Password:
         keys_darst = format_prec(keys, ausrichtung="links", string=True, dotted=True, dotted_len=5)
 
         for i, (key, value) in enumerate(zip(keys_darst, values), start=1):
-            if keys[i-1] != "rb" and keys[i-1] != "rb_inited":
+            if keys[i - 1] != "rb" and keys[i - 1] != "rb_inited":
                 final_str += f"{i}: {key.capitalize()}{value}\n"
 
         return final_str[:-1]
@@ -883,7 +970,6 @@ class Password:
                 print(f"{len(vars(self)) + 2 - 2}: Rückgängig machen")
 
             user_change = user_input(err, max_amount=len(vars(self)) + 2 - 2)
-
             if user_change == len(vars(self)) + 1 - 2:
                 return True
             elif user_change == len(vars(self)) + 2 - 2:
@@ -896,50 +982,49 @@ class Password:
             print("Attribut zu verändern:")
             print(f"{list(vars(self).items())[user_change - 1][0].capitalize()} . . .   \"{list(vars(self).items())[user_change - 1][1]}\"")
             print("\n\nNeuer Wert:")
-            to_change = user_input(err, string=True)
+            to_change = user_input(err, string=True, erlaubte_werte="")
 
-            if list(vars(self).items())[user_change - 1][0].lower() == "typ":
-                to_change = to_change.strip()
-                append = None
-                if to_change[0] == "+":
-                    append = True
-                    to_change = to_change[1:].strip()
-                if to_change[0] == "-":
-                    append = False
-                    to_change = to_change[1:].strip()
+        if list(vars(self).items())[user_change - 1][0].lower() == "typ":
+            to_change = to_change.strip()
+            append = None
+            if to_change[0] == "+":
+                append = True
+                to_change = to_change[1:].strip()
+            if to_change[0] == "-":
+                append = False
+                to_change = to_change[1:].strip()
 
-                if append is None:
-                    self.typ = []
-                    append = True
+            if append is None:
+                self.typ = []
+                append = True
 
-                to_change = to_change.split(",")
-                for item in to_change:
-                    if append:
-                        self.typ.append(item)
+            to_change = to_change.split(",")
+            for item in to_change:
+                if append:
+                    self.typ.append(item.strip())
 
-                    else:
-                        if item in self.typ:
-                            self.typ.remove(item)
-                print(self.typ)
-                return
-
-            elif list(vars(self).items())[user_change - 1][0].lower() == "password":
-                changes = to_change.lower().split()
-                if changes[0] == "r":
-                    if len(changes) == 1:
-                        changes += [random_length]
-                    try:
-                        to_change = random_passwordgen(int(changes[1]), changes[2:])
-                    except ValueError:
-                        pass
-
-            elif list(vars(self).items())[user_change - 1][0].lower() == "geheim":
-                if to_change.lower() in true_accept:
-                    to_change = True
                 else:
-                    to_change = False
+                    if item in self.typ:
+                        self.typ.remove(item.strip())
+            return
 
-            setattr(self, list(vars(self).items())[user_change - 1][0], to_change)
+        elif list(vars(self).items())[user_change - 1][0].lower() == "password":
+            changes = to_change.lower().split()
+            if changes[0] == "r":
+                if len(changes) == 1:
+                    changes += [random_length]
+                try:
+                    to_change = random_passwordgen(int(changes[1]), changes[2:])
+                except ValueError:
+                    pass
+
+        elif list(vars(self).items())[user_change - 1][0].lower() == "geheim":
+            if to_change.lower() in true_accept:
+                to_change = True
+            else:
+                to_change = False
+
+        setattr(self, list(vars(self).items())[user_change - 1][0], to_change)
 
     def __eq__(self, other):
         if isinstance(other, Password):
@@ -950,7 +1035,6 @@ class Password:
     def rb_init(self):
         self.rb = vars(self).copy()
         self.rb_inited = True
-
 
     def rollback(self):
         if not self.rb_inited:
@@ -981,15 +1065,24 @@ def inst_pw(pw_str):
 def demo():
     """Erstellt die Demo Datei."""
     pw = (
-        Password("Email", email="DianaEbersbacher@cuvox.de", password="""{YTxR"2!-qkN}j^;""", typ="email"),
-        Password("Email", email="SaraBayer@cuvox.de", password="""')/Nzu*3-j8A/p+r""", typ="email"),
+        Password(name="Email", email="AxelLalemann@gmail.com", password="Ein_Apfel", website="https://mail.google.com/", typ=["email", "gmail"]),  # Tatsächliche Registrierung
+        Password(name="Email", email="EricHerzog@gmail.com", password="das sicherste Passwort was keiner je erraten kann weil ich so kluk bin", website="https://mail.google.com/", typ=["email", "gmail"]),
+        Password(name="Email", email="LukasKrueger@gmail.com", password="""T/4.8F~C1D7>E.9LP]7..$]6G_Z;35uU=,':K9qr/?ATdG"W!Kd[<~ag`Ol$qzSl""", website="https://mail.google.com/", typ=["email", "gmail"]),
+        Password(name="Email", email="PhilippJunker@gmail.com", password="ach passwörter sind doch nicht wichtig !!", website="https://mail.google.com/", typ=["email", "gmail"]),
 
-        Password("Passwort 1", "NiklasAckerman@einrot.com", "2y(MN`'qc(n,J.vr", "Niklas1234", "Diese Website", False,
-                 typ="party"),
-        Password("Passwort 2", "FrankBarth@einrot.com", "6a3jT4m.p<,7xZw&", "Frank1234", "Die andere", True, typ="party"),
-        Password("Passwort 3", "MathiasFreeh@cuvox.de", "&Vp3;,%(BST8CL}@", "Mathias1234", "Diese Website", False,
-                 typ="party"),
-        Password("Passwort 3", "DirkBaer@cuvox.de", ";Pvd{JK.7D5vH{+!", "Dirk1234", "", False),
+        Password(name="Youtube", email="AxelLalemann@gmail.com", password="Ein_Apfel", username="", website="https://www.youtube.com/", geheim=False, typ=["youtube", "video"]),  # Tatsächliche Registrierung
+        Password(name="Youtube", email="EricHerzog@gmail.com", password="Kartoffels@lat78", username="", website="https://www.youtube.com/", geheim=False, typ=["youtube", "video"]),
+        Password(name="Youtube", email="LukasKrueger@gmail.com", password=r"""8@;M!nS)\~@J`M}r??#:=aQK;Y]d+.[@_Aqh!|FgW|@:=M1dfJUgZ_@vxX4ar0tu""", username="", website="https://www.youtube.com/", geheim=False, typ=["youtube", "video"]),
+
+        Password(name="Twitch", email="AxelLalemann@gmail.com", password="Eine_Banane", username="smurfplay69", website="https://www.twitch.tv/", geheim=False, typ=["twitch", "video"]),  # Tatsächliche Registrierung
+        Password(name="Twitch", email="EricHerzog@gmail.com", password="S[MlEt/47F^zmc0+", username="KesselKind", website="https://www.twitch.tv/", geheim=False, typ=["twitch", "video"]),
+        Password(name="Twitch", email="LukasKrueger@gmail.com", password="""a;&8`VLZvE9C:&{Y30V7f|g)G,;jO4W$$b37yHSnRh;zmOz+Sd0"!}=v][uhfTR5""", username="PlsPickMeXayah", website="https://www.twitch.tv/", geheim=False, typ=["twitch", "video"]),
+
+        Password(name="Instagram", email="AxelLalemann@gmail.com", password="Eine_Orange", username="_axel.lal", website="https://www.instagram.com/", geheim=False, typ=["instagram", "social media"]),
+        Password(name="Instagram", email="EricHerzog@gmail.com", password="Kein brute force Angriff wird je gewinnen HAHAHA!", username="eric", website="https://www.instagram.com/", geheim=False, typ=["instagram", "social media"]),
+        Password(name="Instagram", email="LukasKrueger@gmail.com", password="""Z7}EK,'qb5D9-BR)8WBV$gFK+}E/EvPp'snF)L;J&jK<YEBR+@lxt`3HtHoZ5Q<u""", username="_._._", website="https://www.instagram.com/", geheim=False, typ=["instagram", "social media"]),
+
+        Password(name="Snapchat", email="LukasKrueger@gmail.com", password="""mdH4BkC%'{_~mo:U=vWkU1*VKWyjp]1=Y*-XD!Y9oHI5k`E$g8vj~Basu(ja66<f""", username="😀", website="https://www.instagram.com/", geheim=False, typ=["instagram", "social media"]),
     )
     with open(demo_file, "w+") as f:
         f.write(dump_pw(pw))
@@ -1075,9 +1168,8 @@ def _decrypter(password, text):
     return decrypted
 
 
-def decrypter(file_name=clean_file):
+def decrypter(file_name=encrypted_file):
     """Entschlüsselt eine gegebene datei mit Passwortpromt. Geheimes Passwort wird unterstützt."""
-    geheim_pass = ""
     i = 0
     while True:
         print("Bitte Passwort eingeben:\n")
@@ -1085,17 +1177,15 @@ def decrypter(file_name=clean_file):
         cls()
 
         try:
-            with open(encrypted_file, "r") as f:
-
+            with open(file_name, "r") as f:
 
                 decrypted = _decrypter(user_password, f.read())
-
 
                 break
 
         except InvalidToken:
             cprint("\nDas Passwort ist Falsch!", "red")
-            if i+2 > passwort_hinweis_num and passwort_hinweis:
+            if i + 2 > passwort_hinweis_num and passwort_hinweis:
                 cprint(f'Der Passworthinweis ist: "{passwort_hinweis}"\n', "yellow")
             else:
                 print()
@@ -1181,7 +1271,9 @@ def get_pw_user(passwords, geheim_care=True, choose=False, delete=False):
             print("Für was möchtest du das Passwort wissen?")
         else:
             print("Welches Passwort möchtest du löschen?")
+
         user_key = user_input(err, string=True, min_amount=False)
+
         if err.error is False and user_key.lower() in show:
             cls()
             if passwords:
@@ -1255,6 +1347,11 @@ def change_pass(passwords, geheim_care=True, direct=False):
     global state
     if direct is False:
         pw = get_pw_user(passwords, geheim_care, choose=True)
+    else:
+        pw = passwords
+
+    if pw is None or not isinstance(pw, Password):
+        return
 
     pw.rb_init()
     check = False
@@ -1272,7 +1369,7 @@ def change_pass(passwords, geheim_care=True, direct=False):
                 state = "aborted"
             return pw
         else:
-            print("Erfolgreich verändert\n")
+            cprint("\nErfolgreich verändert\n", "green")
         check = True
     return pw
 
@@ -1283,7 +1380,6 @@ def add_pass(passwords, geheim_care=True):
     while err.error:
         print("Wie soll der Name des neuen Passworts sein?\n")
         pass_name = user_input(err, string=True)
-
     namen = [item.name for item in passwords if geheim_care is False or item.geheim is False]
 
     append = True
@@ -1302,20 +1398,24 @@ def add_pass(passwords, geheim_care=True):
                 _ = "Einen", "Die", "Einträge"
             print(f"2: {_[0]} vorhandenen Eintrag aktualisieren")
             print(f"3: {_[1]} vorhandenen {_[2]} mit einem neuen Passwort überschreiben")
-            aktion = user_input(err, max_amount=3)
+            action = user_input(err, max_amount=3)
 
-        if aktion == 2:
+        if action == 2:
             if namen.count(pass_name) > 1:
                 err.error = True
                 while err.error:
                     print("Welchen der Einträge möchtest du verändern?")
+                    pw_kandidaten = [item for item in passwords if item.name == pass_name]
+                    for i, item in enumerate(pw_kandidaten, start=1):
+                        print(f"{i}:\n")
+                        print(item)
+                        print()
                     nr = user_input(err, max_amount=namen.count(pass_name))
-                    pw = passwords
+                    pw = pw_kandidaten[nr-1]
 
-            return pass_aktualisieren(passwords, geheim_care, pass_name)
+            return change_pass(pw, geheim_care, direct=pass_name)
 
-
-        elif aktion == 3:
+        elif action == 3:
             append = False
 
     pw = Password(pass_name)
@@ -1331,7 +1431,6 @@ def add_pass(passwords, geheim_care=True):
                     except ValueError:
                         pass
                 passwords.append(pw)
-            global state
             state = "added"
             return pw
 
@@ -1350,7 +1449,8 @@ def delete_pass(passwords, secret_care=True, direct=False):
     print(pw)
     cprint("\nDies kann nicht rückgängig gemacht werden. Bitte bestätigen um Fortzufahren", "red")
     accept = user_input(Input(), string=True)
-    if accept not in true_accept:
+
+    if accept.lower() not in true_accept:
         state = "aborted"
         return
 
@@ -1426,37 +1526,98 @@ def convert_from_legacy(legacy_file=legacy_file):
         else:
             geheim = item.pop()
 
-
         password_list.append(Password(*item, geheim=geheim, typ=typ))
 
     return password_list
 
 
-def listen_keys(kill_event, start_event):
-    def on_press(kill_event, start_writing, key):
-        print(key)
-        if key == esc_pw_key:
+def listen_keys(password, kill_event, website_event, username_event, email_event, password_event, sync_event):
+    def on_press(kill_event, website_event, username_event, email_event, password_event, sync_event, key):
+        if not sync_event.is_set():
+            print(key)
+
+        if sync_event.is_set():
+            time.sleep(sleep_time)
+
+        elif key == esc_key:
             kill_event.set()
-            sys.exit(0)
-        if key == enter_pw_key:
-            kill_event.set()
-            start_event.set()
             sys.exit(0)
 
-    with keyboard.Listener(on_press=partial(on_press, kill_event, start_event)) as listener:
+        elif key == website_key or password_mapping == "numpad" and hasattr(key, "vk") and key.vk == website_key:
+            website_event.set()
+            sync_event.set()
+            print("-> Typing Website")
+
+        elif key == username_key or password_mapping == "numpad" and hasattr(key, "vk") and key.vk == username_key:
+            username_event.set()
+            sync_event.set()
+            print("-> Typing Username")
+
+        elif key == email_key or password_mapping == "numpad" and hasattr(key, "vk") and key.vk == email_key:
+            email_event.set()
+            sync_event.set()
+            print("-> Typing Email")
+
+        elif key == password_key or password_mapping == "numpad" and hasattr(key, "vk") and key.vk == password_key:
+            password_event.set()
+            sync_event.set()
+            print("-> Typing Password")
+
+    print("Das Passwort:")
+    print(password)
+    print("\n")
+
+    print(f"Die möglichen Kombinationen für Eingaben sind:\n")
+    print(f'Diesen Modus verlassen:    "{esc_key}"')
+    print(f'Website eingeben lassen:   "{website_key}"')
+    print(f'Usernamen eingeben lassen: "{username_key}"')
+    print(f'Email eingeben lassen:     "{email_key}"')
+    print(f'Passwort eingeben lassen:  "{password_key}"')
+    print("\n")
+
+    with keyboard.Listener(on_press=partial(on_press, kill_event, website_event, username_event, email_event, password_event, sync_event)) as listener:
         listener.join()
 
 
-def press_keys(to_press, kill_event, start_event):
+def press_keys(password, kill_event, website_event, username_event, email_event, password_event, sync_event):
     kb = keyboard.Controller()
+    _type = False
+    event = None
     while True:
-        if start_event.is_set():
-            kb.type(to_press)
+        if kill_event.is_set():
             sys.exit(0)
-        elif kill_event.is_set():
-            sys.exit(0)
+
+        elif website_event.is_set():
+            to_type = password.website
+            event = website_event
+            _type = True
+
+        elif username_event.is_set():
+            to_type = password.username
+            event = username_event
+            _type = True
+
+        elif email_event.is_set():
+            to_type = password.email
+            event = email_event
+            _type = True
+
+        elif password_event.is_set():
+            to_type = password.password
+            event = password_event
+            _type = True
+
+        if _type:
+            kb.type(to_type)
+
+            sync_event.clear()
+            if event is not None:
+                event.clear()
+            _type = False
+            print("</ Typing\n")
         else:
-            time.sleep(0.01)
+            time.sleep(sleep_time)
+            continue
 
 
 def press_password(password):
@@ -1470,25 +1631,24 @@ def press_password(password):
                 print()
 
             auswahl = user_input(err, max_amount=len(password))
-
         password = password[auswahl - 1]
 
-    start = Event()
-    kill = Event()
-    write_thread = Process(target=press_keys, args=(password.password, kill, start))
-    listen_thread = Process(target=listen_keys, args=(kill, start))
+    if not isinstance(password, Password):
+        cprint(f"password ist kein Passwort: {password}: {type(password)}", "red")
 
-    print(f'Die Einzugebende Kombination ist: "{enter_pw_key}", um diesen Modus zu verlassen bitte "{esc_pw_key}" drücken')
+    website_event, username_event, email_event, password_event, sync_event, kill_event = Event(), Event(), Event(), Event(), Event(), Event()
+    write_thread = Process(target=press_keys, args=(password, kill_event, website_event, username_event, email_event, password_event, sync_event))
+    listen_thread = Process(target=listen_keys, args=(password, kill_event, website_event, username_event, email_event, password_event, sync_event))
+
     write_thread.start()
     listen_thread.start()
 
     write_thread.join()
     listen_thread.join()
 
-    global state
-    if kill.is_set() and start.is_set():
+    if kill_event.is_set() and password_event.is_set():
         state = "enter_pw written"
-    elif kill.is_set() and not start.is_set():
+    elif kill_event.is_set() and not password_event.is_set():
         state = "aborted"
     else:
         state = "bug"
@@ -1496,6 +1656,7 @@ def press_password(password):
 
 def main():
     """Haupt Funktion"""
+    cls()
     global state
     err = Input()
     secret = True
@@ -1521,14 +1682,12 @@ def main():
                 print(f"4: {legacy_file} konvertieren und in {clean_file} schreiben")
                 accepted_val.append(4)
 
-            action = user_input(err, max_amount=False, erlaubte_werte=accepted_val)
-
+            action = user_input(err, max_amount=False, erlaubte_werte=accepted_val, exit_after_time=False)
         err.error = True
         if action == 1:
             if encrypted_exists:
 
                 user_password, decrypted = decrypter(encrypted_file)
-
 
             else:
                 err.error = True
@@ -1545,7 +1704,7 @@ def main():
 
                     print(f"3: Eine neue Datenbank anlegen")
 
-                    action = user_input(err, min_amount=3, max_amount=3, erlaubte_werte=accepted_val)
+                    action = user_input(err, min_amount=3, erlaubte_werte=accepted_val)
 
                 if action in [1, 2]:
                     if action == 1:
@@ -1584,7 +1743,6 @@ def main():
             dump_pw(passwords, to_file=True)
             cprint("\nErfolgreich überschrieben!\n\n", "green")
 
-
     if encrypted_exists:
         if use_legacy and legacy_exists:
             passwords = convert_from_legacy(legacy_file)
@@ -1614,7 +1772,10 @@ def main():
         if action == secret_password:
             secret = False
 
-        if action == 1:
+        if action == "terminate":
+            pass
+
+        elif action == 1:
             enter_pw = read_pass(passwords, secret)
 
         elif action == 2:
@@ -1678,6 +1839,10 @@ def main():
         elif state == "enter_pw written":
             cprint(f"Erfolgreich eingegeben", "green")
 
+        elif state == "terminate":
+            cprint(f"Zu lange keinen Input - Passwort manager hat sich heruntergefahren!", "green")
+            return
+
         if state is not None:
             print()
 
@@ -1686,4 +1851,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
