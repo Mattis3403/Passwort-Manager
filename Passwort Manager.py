@@ -15,7 +15,6 @@ from numbers import Number
 from multiprocessing import Process, Event
 from functools import partial
 
-
 os.system('cls' if os.name == 'nt' else 'clear')
 
 
@@ -57,7 +56,6 @@ except ImportError:
     print("\n")
     from func_timeout import func_timeout, FunctionTimedOut
 
-
 """
 Ab Hier kann verändert werden
 ------------------------------------------------------------------
@@ -66,7 +64,7 @@ Ab Hier kann verändert werden
 
 # Veränderbare Einstellungen:
 
-#
+
 # Dateinamen mit Dateierweiterung:
 
 clean_file = "Pass.clean"
@@ -81,11 +79,13 @@ legacy_file = "Pass.legacy"
 # demo_file = "Pass_demo.txt"
 # legacy_file = "Pass_legacy.txt"
 
-#
+
 # Legacy Datei benutzen:
 use_legacy = False
 
-#
+# Ob das Graphical User Interface genutzt werden soll - hat zurzeit kein Einfluss
+use_gui = False
+
 # Zufälliges Passwort:
 
 # Normales Passwort mit allen Sonderzeichen:
@@ -101,10 +101,10 @@ random_password = string.printable[:94]  # Standardeinstellung
 # Wenn du sie in einen String schreibst ist es wichtig die r"""  """ zu setzen.
 # Ansonsten werden bestimmte Charaktere anders interpretiert.
 
+
 # Hier kann die standardmäßige Länge des zufälligen Passwortes angepasst werden.
 random_length = 32
 
-#
 # Geheimes Passwort:
 secret_password = "1234"
 
@@ -119,8 +119,10 @@ toleranz_sequence = 0.1
 
 # Passworthinweis:
 passwort_hinweis = "Bitte benutze deine Arme!"
-# Falls keiner:
+
+# Falls kein Hinweis benutzt werden soll:
 # passwort_hinweis = None oder ""
+
 
 # Nach wie vielen falschen Versuchen der Hinweis angezeigt werden soll
 passwort_hinweis_num = 2
@@ -128,11 +130,10 @@ passwort_hinweis_num = 2
 # Zeit, die zwischen polling vergeht (in Sekunden)
 sleep_time = 0.0001
 
-# Wie viele Sekunden du für Input Zeit hast
+# Wie viele Sekunden du für Input Zeit hast (in s)
 timeout_time = 5 * 60
 
 # Taste die gedrückt wird um Passwort eingeben zu lassen, zweite um den Modus zu verlassen
-# 100 000 Stellen eingeben bei mir: 28 sek
 
 # Mapping auf "normale" keys, die nichts eingeben:
 password_mapping = "normal"
@@ -141,7 +142,6 @@ website_key = keyboard.Key.end
 username_key = keyboard.Key.home
 email_key = keyboard.Key.page_down
 password_key = keyboard.Key.delete
-
 
 # # Mapping auf numpad, letzte Eingabe wird gelöscht - Funktioniert noch nicht
 # password_mapping = "numpad"
@@ -171,12 +171,10 @@ iterations = 10 ** 6
 # Algorithmus zum verschlüsseln:
 algorithm = hashes.SHA3_512()
 
-
 """
 Bis hierhin
 </------------------------------------------------------------------
 """
-
 
 # NICHT VERÄNDERN!
 
@@ -219,51 +217,12 @@ __ALL__ = ['colored', 'cprint']
 
 VERSION = (1, 1, 0)
 
-ATTRIBUTES = dict(
-    list(zip([
-        'bold',
-        'dark',
-        '',
-        'underline',
-        'blink',
-        '',
-        'reverse',
-        'concealed'
-    ],
-        list(range(1, 9))
-    ))
-)
+ATTRIBUTES = dict(list(zip(['bold', 'dark', '', 'underline', 'blink', '', 'reverse', 'concealed'], list(range(1, 9)))))
 del ATTRIBUTES['']
 
-HIGHLIGHTS = dict(
-    list(zip([
-        'on_grey',
-        'on_red',
-        'on_green',
-        'on_yellow',
-        'on_blue',
-        'on_magenta',
-        'on_cyan',
-        'on_white'
-    ],
-        list(range(40, 48))
-    ))
-)
+HIGHLIGHTS = dict(list(zip(['on_grey', 'on_red', 'on_green', 'on_yellow', 'on_blue', 'on_magenta', 'on_cyan', 'on_white'], list(range(40, 48)))))
 
-COLORS = dict(
-    list(zip([
-        'grey',
-        'red',
-        'green',
-        'yellow',
-        'blue',
-        'magenta',
-        'cyan',
-        'white',
-    ],
-        list(range(30, 38))
-    ))
-)
+COLORS = dict(list(zip(['grey', 'red', 'green', 'yellow', 'blue', 'magenta', 'cyan', 'white'], list(range(30, 38)))))
 
 RESET = '\033[0m'
 
@@ -370,14 +329,6 @@ def user_input(err, string=False, ja=False, nein=False, max_amount=False, min_am
     Gibt dem User die Möglichkeit bestimmte Eingaben zu nutzen.
     exit_after_time in sekunden
     """
-    # def kill_after_time(zeit, kill_event):
-    #     start_time = time.time()
-    #     while True:
-    #         if time.time() - start_time >= zeit:
-    #             kill_event.set()
-    #             sys.exit(0)
-    #         else:
-    #             time.sleep(sleep_time)
     err.error = True
 
     if not isinstance(erlaubte_werte, (list, tuple)):
@@ -641,7 +592,7 @@ def get_ausrichtung(ausrichtung):
 
 
 def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts", string=False, klammer=False,
-                klammertyp="rund", pfeil=False, pfeil_under=False, vorne=False, absval=False, gross_klam=False,
+                klammertyp="rund", vorne=False, absval=False, gross_klam=False,
                 string_ausrichtung=None, bruch=False, nur_pfeil=False, liste=False, dotted=False, dotted_len=False):
     """format_prec - Die Spacing Funktion. Diese Funktion gibt formattierten Input zurück."""
     check = False
@@ -651,10 +602,7 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
         check = True
 
     elif isinstance(phlist, str):
-        if pfeil:
-            phlist = ["", phlist]
-        else:
-            phlist = [phlist]
+        phlist = [phlist]
         check = True
 
     elif isinstance(phlist, dict):
@@ -665,10 +613,6 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
 
     elif isinstance(phlist[0], list):
         pass
-
-    if check:
-        if pfeil and not nur_pfeil:
-            check = False
 
     if absval:
         phlist = [abs(item) if isinstance(item, Number) else item for item in phlist]
@@ -686,9 +630,6 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
         str_ar = get_ausrichtung(string_ausrichtung)
 
     anf_klam, end_klam = [""], [""]
-    if klammer:
-        if gross_klam:
-            anf_klam, end_klam = get_klam(len(phlist), klammertyp)
 
     check_2 = False
     if vorne and ausrichtung == "links":
@@ -799,10 +740,6 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
 
                 ph.append(x)
 
-        if get_divers("komma"):
-            for i in range(len(ph)):
-                ph[i] = ph[i].replace(".", ",")
-
         return ph
 
     while i < len(phlist):
@@ -810,32 +747,6 @@ def format_prec(phlist, prec=2, mehrere=True, min_length=0, ausrichtung="rechts"
             max_len = parser_maxlen(phlist[i], prec, mehrere, string, absval, klammer)
 
         if type(phlist[i]) == str:
-            if pfeil and phlist[i].strip():
-                pfeil = get_pfeil(max_len)
-
-                if nur_pfeil:
-                    if liste:
-                        pfeil = [pfeil]
-                    return pfeil
-
-                elif pfeil_under:
-                    try:
-                        ph[i] = phlist[i]
-                    except IndexError:
-                        ph.append(phlist[i])
-                    try:
-                        ph[i + 1] = pfeil
-                    except IndexError:
-                        ph.append(pfeil)
-                    i += 1
-                    continue
-
-                else:
-                    if i == 0:
-                        ph.insert(0, pfeil)
-                    else:
-                        ph[i - 1] = pfeil
-
             if dotted:
                 x = f"{anf_klam[n]}{phlist[i]:{str_ar}}{end_klam[n]}"
                 j = len(x)
@@ -938,6 +849,7 @@ class Password:
         self.username = str(username)
         self.website = str(website)
         self.geheim = geheim
+        self.rb = None
         self.rb_inited = False
 
     def to_json(self, geheim=False):
@@ -1088,8 +1000,10 @@ def demo():
         f.write(dump_pw(pw))
 
 
-def random_passwordgen(n, typ=[]):
+def random_passwordgen(n, typ=None):
     pass_list = []
+    if typ is None:
+        typ = []
     if "lower" in typ:
         pass_list.append(string.ascii_lowercase)
     if "upper" in typ:
@@ -1411,7 +1325,7 @@ def add_pass(passwords, geheim_care=True):
                         print(item)
                         print()
                     nr = user_input(err, max_amount=namen.count(pass_name))
-                    pw = pw_kandidaten[nr-1]
+                    pw = pw_kandidaten[nr - 1]
 
             return change_pass(pw, geheim_care, direct=pass_name)
 
@@ -1495,12 +1409,12 @@ def check_exists():
     return encrypted_exists, clean_exists, demo_exists, legacy_exists
 
 
-def convert_from_legacy(legacy_file=legacy_file):
+def convert_from_legacy(file=legacy_file):
     *_, legacy_exists = check_exists()
     if not legacy_exists:
         return
 
-    with open(legacy_file) as f:
+    with open(file) as f:
         password_string = f.read()
 
     if "__________________________________________________" in password_string:
@@ -1608,6 +1522,8 @@ def press_keys(password, kill_event, website_event, username_event, email_event,
             _type = True
 
         if _type:
+            to_type = to_type.replace("^", "^ ")
+            print(to_type)
             kb.type(to_type)
 
             sync_event.clear()
@@ -1654,7 +1570,7 @@ def press_password(password):
         state = "bug"
 
 
-def main():
+def main_no_gui():
     """Haupt Funktion"""
     cls()
     global state
@@ -1849,5 +1765,31 @@ def main():
         state = None
 
 
+# class LockedScreen(GridLayout):
+#     def __init__(self, **kwargs):
+#         super().__init__(**kwargs)
+#         self.cols = 2
+#         self.add_widget(Label(text="Passwort:"))
+#         self.user_password = TextInput(multiline=False)
+#         self.add_widget(self.user_password)
+
+#         self.submit = Button(text="Entschlüsseln")
+#         self.submit.bind(on_press=decrypt_pass)
+#         self.add_widget(self.submit)
+
+#     def decrypt_pass(self):
+#         pass
+
+
+# class TestApp(App):
+#     def build(self):
+#         return LockedScreen()
+
+# def main_gui():
+#     TestApp().run()
+
 if __name__ == "__main__":
-    main()
+    if use_gui:
+        main_gui()
+    else:
+        main_no_gui()
